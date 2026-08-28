@@ -1,9 +1,11 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use cordis::{Inject, PluginHandle, service_sync};
+use kaleido_plugin_host::WasmPluginManager;
 
 use crate::{FileCodecImpl, HistoryKeeperImpl, ImageStoreImpl};
-use kaleido_traits::{FileCodec, HistoryKeeper, ImageStore};
+use kaleido_traits::{FileCodec, HistoryKeeper, ImageStore, resolve_tool_registry};
 
 // ---------------------------------------------------------------------------
 // Cordis service plugins
@@ -72,6 +74,48 @@ pub fn history_keeper_plugin() -> PluginHandle {
 }
 
 // ---------------------------------------------------------------------------
+// WASM Plugin Manager
+// ---------------------------------------------------------------------------
+
+/// Plugin for [`WasmPluginManager`] — depends on `tool_registry`.
+///
+/// On activation, creates a [`WasmPluginManager`], loads WASM plugins from
+/// the configured directories, resolves the [`ToolRegistry`], and registers
+/// all discovered tools. The plugin accepts a list of directories to scan.
+pub fn wasm_plugin_manager_plugin(plugin_dirs: Vec<PathBuf>) -> PluginHandle {
+    service_sync::<WasmPluginManager, (), _>(
+        "wasm_plugin_manager",
+        Inject::new(["tool_registry"]),
+        move |_ctx, _config| {
+            let manager = WasmPluginManager::new(_ctx.clone()).map_err(|e| {
+                cordis::CordisError::with_message(cordis::ErrorCode::Other, e.to_string())
+            })?;
+
+            // Load plugins from each configured directory.
+            for dir in &plugin_dirs {
+                if dir.exists() {
+                    if let Err(e) = manager.load_plugin(dir) {
+                        tracing::warn!(
+                            "Failed to load WASM plugin from {}: {}",
+                            dir.display(),
+                            e
+                        );
+                    }
+                }
+            }
+
+            // Register all tools with the tool registry.
+            let registry = resolve_tool_registry(&_ctx)?;
+            manager.register_all_tools(registry.as_ref());
+
+            Ok(manager)
+        },
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ------------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

@@ -1,11 +1,15 @@
 //! WASM plugin host for Kaleido.
 //!
 //! This crate provides the infrastructure for loading and running tool
-//! plugins. In the MVP it supports native (Rust) plugins through the
-//! [`PluginManifest`] and [`PluginLoader`] traits. The WASM boundary is
-//! designed ahead: the [`WasmPluginHost`] struct is the extension point
-//! for adding a `wasmtime`-based runtime in a future version without
-//! changing the public API.
+//! plugins. It supports:
+//! - **Native plugins** — constructed from a manifest (MVP)
+//! - **WASM plugins** — compiled `.wasm` files executed via [`wasmtime`]
+//!
+//! The WASM boundary uses a simple C-ABI: plugins export functions like
+//! `plugin_init`, `tool_apply`, etc., and import host functions like
+//! `host_log`. See the [`wasm_host`] module for details.
+
+pub mod wasm_host;
 
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -15,6 +19,8 @@ use kaleido_core::{Image, ImageResult};
 use kaleido_traits::{ParamSchema, Tool, ToolParams, ToolSchema};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
+
+pub use wasm_host::{WasmPluginConfig, WasmPluginLoader, WasmPluginManager};
 
 // ---------------------------------------------------------------------------
 // PluginManifest — metadata describing a plugin

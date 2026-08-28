@@ -187,9 +187,12 @@ mod tests {
     use kaleido_core::PixelFormat;
     use std::fs;
 
-    /// Creates a temporary directory for test files.
-    fn temp_dir() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("kaleido_test_{}", std::process::id()))
+    /// Creates a unique temporary directory for a test file.
+    ///
+    /// Each call returns a unique subdirectory to prevent parallel tests from
+    /// racing on the same directory.
+    fn temp_dir(test_name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("kaleido_test_{}_{}", std::process::id(), test_name))
     }
 
     #[test]
@@ -245,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_save_and_load_png() {
-        let dir = temp_dir();
+        let dir = temp_dir("test_save_and_load_png");
         let _ = fs::create_dir_all(&dir);
         let path = dir.join("test_save_and_load_png.png");
 
@@ -273,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_save_and_load_jpeg() {
-        let dir = temp_dir();
+        let dir = temp_dir("test_save_and_load_jpeg");
         let _ = fs::create_dir_all(&dir);
         let path = dir.join("test_save_and_load_jpeg.jpg");
 
@@ -301,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_save_and_load_webp() {
-        let dir = temp_dir();
+        let dir = temp_dir("test_save_and_load_webp");
         let _ = fs::create_dir_all(&dir);
         let path = dir.join("test_save_and_load_webp.webp");
 
@@ -336,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_save_unsupported_format() {
-        let dir = temp_dir();
+        let dir = temp_dir("test_save_unsupported_format");
         let _ = fs::create_dir_all(&dir);
         let path = dir.join("test_save_unsupported_format.bmp");
 
@@ -358,7 +361,7 @@ mod tests {
 
     #[test]
     fn test_save_with_format() {
-        let dir = temp_dir();
+        let dir = temp_dir("test_save_with_format");
         let _ = fs::create_dir_all(&dir);
         let path = dir.join("test_save_with_format.png");
 
@@ -389,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_roundtrip_png() {
-        let dir = temp_dir();
+        let dir = temp_dir("test_roundtrip_png");
         let _ = fs::create_dir_all(&dir);
         let path = dir.join("test_roundtrip_png.png");
 

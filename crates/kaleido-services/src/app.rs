@@ -5,13 +5,16 @@
 //! accessors. Call [`KaleidoApp::dispose`] to tear the whole dependency
 //! tree down cleanly (or just drop the app).
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use cordis::{Context, Result};
+use kaleido_plugin_host::WasmPluginManager;
 use kaleido_traits::{FileCodec, HistoryKeeper, ImageStore, Tool, ToolRegistry};
 
 use crate::cordis_plugins::{
     HistoryConfig, file_codec_plugin, history_keeper_plugin, image_store_plugin,
+    wasm_plugin_manager_plugin,
 };
 use crate::tool_registry_plugin;
 
@@ -24,12 +27,15 @@ use crate::tool_registry_plugin;
 pub struct AppConfig {
     /// Maximum number of undo steps retained by the history keeper.
     pub history_max_steps: usize,
+    /// Directories to scan for WASM tool plugins at startup.
+    pub wasm_plugin_dirs: Vec<PathBuf>,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             history_max_steps: 50,
+            wasm_plugin_dirs: Vec::new(),
         }
     }
 }
@@ -45,9 +51,11 @@ impl Default for AppConfig {
 /// ```text
 /// KaleidoApp::boot(AppConfig)  ──►  Context::new() + install plugins
 ///         │
-///         ├── file_codec     (no deps)
-///         ├── image_store    (← file_codec)
-///         └── history_keeper (← image_store)
+///         ├── tool_registry     (no deps)
+///         ├── wasm_plugin_manager (← tool_registry)
+///         ├── file_codec        (no deps)
+///         ├── image_store       (← file_codec)
+///         └── history_keeper    (← image_store)
 ///         │
 ///         ├── app.image_store() / history_keeper() / ...   typed accessors
 ///         └── app.dispose()  ──►  dispose root fiber → unload all services
@@ -62,6 +70,7 @@ pub struct KaleidoApp {
     image_store: Arc<dyn ImageStore>,
     history_keeper: Arc<dyn HistoryKeeper>,
     tool_registry: Arc<dyn ToolRegistry>,
+    wasm_plugin_manager: Arc<WasmPluginManager>,
 }
 
 impl KaleidoApp {
@@ -78,6 +87,7 @@ impl KaleidoApp {
         // Install in dependency order. Cordis also reconciles out-of-order
         // installs automatically, but in-order is deterministic.
         ctx.plugin(tool_registry_plugin(), ());
+        ctx.plugin(wasm_plugin_manager_plugin(config.wasm_plugin_dirs), ());
         ctx.plugin(file_codec_plugin(), ());
         ctx.plugin(image_store_plugin(), ());
         ctx.plugin(
@@ -95,6 +105,8 @@ impl KaleidoApp {
         let history_keeper: Arc<dyn HistoryKeeper> =
             ctx.require::<crate::HistoryKeeperImpl>("history_keeper")?;
         let tool_registry: Arc<dyn ToolRegistry> = kaleido_traits::resolve_tool_registry(&ctx)?;
+        let wasm_plugin_manager: Arc<WasmPluginManager> =
+            ctx.require::<WasmPluginManager>("wasm_plugin_manager")?;
 
         Ok(Self {
             ctx,
@@ -102,6 +114,7 @@ impl KaleidoApp {
             image_store,
             history_keeper,
             tool_registry,
+            wasm_plugin_manager,
         })
     }
 
@@ -136,6 +149,11 @@ impl KaleidoApp {
     /// Returns the tool registry (all tools provided by installed plugins).
     pub fn tool_registry(&self) -> Arc<dyn ToolRegistry> {
         self.tool_registry.clone()
+    }
+
+    /// Returns the WASM plugin manager.
+    pub fn wasm_plugin_manager(&self) -> Arc<WasmPluginManager> {
+        self.wasm_plugin_manager.clone()
     }
 
     /// Generates a new tool from an AI description and registers it.
@@ -222,6 +240,7 @@ mod tests {
     fn test_boot_honors_history_config() {
         let app = KaleidoApp::boot(AppConfig {
             history_max_steps: 2,
+            ..Default::default()
         })
         .unwrap();
 
