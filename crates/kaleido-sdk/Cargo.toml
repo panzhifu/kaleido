@@ -1,0 +1,10 @@
+[package]
+name = "kaleido-sdk"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kaleido-core = { path = "../kaleido-core" }
+kaleido-traits = { path = "../kaleido-traits" }
+serde.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "kaleido-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kaleido-core = { path = "../../crates/kaleido-core" }
+kaleido-traits = { path = "../../crates/kaleido-traits" }
+kaleido-services = { path = "../../crates/kaleido-services" }
+kaleido-tool-brightness = { path = "../../plugins/examples/brightness" }
+kaleido-tool-invert = { path = "../../plugins/examples/invert" }
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+clap = { version = "4.5", features = ["derive"] }
+serde_json.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "kaleido-desktop"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kaleido-core = { path = "../../crates/kaleido-core" }
+kaleido-traits = { path = "../../crates/kaleido-traits" }
+kaleido-services = { path = "../../crates/kaleido-services" }
+kaleido-tool-brightness = { path = "../../plugins/examples/brightness" }
+kaleido-tool-invert = { path = "../../plugins/examples/invert" }
+anyhow.workspace = true
+serde_json.workspace = true
+gpui.workspace = true
+gpui_platform.workspace = true
+gpui-component.workspace = true
+gpui-component-assets.workspace = true

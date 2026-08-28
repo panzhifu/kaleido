@@ -1,0 +1,20 @@
+# Rust build artifacts
+/target
+**/*.rs.bk
+
+# Generated files
+*.wasm
+*.wit.md
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+/tmp
