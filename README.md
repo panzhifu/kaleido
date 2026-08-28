@@ -2,6 +2,8 @@
 
 > AI-native image workstation — a plugin-driven image editor built on [Cordis](https://github.com/dshbox/cordis-rs) and [GPUI](https://github.com/zed-industries/zed).
 
+**English** | [简体中文](README.zh-CN.md)
+
 Kaleido is an image editor under construction. Its architecture is deliberately plugin-first: the host (CLI / desktop) provides only the window, canvas and service container; **every user-facing feature is a plugin** registered into a Cordis-managed tool registry.
 
 ## Features
