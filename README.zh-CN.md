@@ -21,7 +21,7 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 - 类型化事件系统统一在 Cordis 之上（14 种事件名 + 类型化 payload，订阅随生命周期自动清理）
 
 ### 应用层
-- **`kaleido-cli`** — 图像信息 / 格式转换 / 列出格式 / 亮度 / 反相 / 缩放 / 灰度化
+- **`kaleido-cli`** — 图像信息 / 格式转换 / 列出格式 / 亮度 / 反相 / 缩放 / 灰度化，以及插件命令：`list-tools`、`tool-schema`、`run`（自定义参数）、`create-tool`（AI 生成工具）
 - **`kaleido-desktop`** — GPUI 宿主：画布 + **从插件注册表动态生成的工具栏**
 
 ### 插件体系
@@ -29,6 +29,7 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 - **参数 schema**（`ParamType` / `ParamSchema` / `ToolSchema`）— 自动生成 UI 表单、参数校验与默认值
 - **WIT 接口**（`wit/kaleido.wit`）— WASM 边界：`tool`、`plugin-lifecycle`、`host-functions` 接口 + `world kaleido-plugin`
 - **插件宿主**（`kaleido-plugin-host`）— `PluginManifest`、`Plugin`/`PluginLoader` trait、`PluginManager`、`AIToolGenerator`（动态生成工具）
+- **WASM 运行时** — 编译好的 `.wasm` 插件通过 **wasmtime** 加载执行：`WasmPluginManager` 扫描插件目录、实例化模块（C ABI：`plugin_init` / `tool_apply` 等）、把所有工具注册进注册表；宿主函数（`host_log`、`host_emit_event`）已链接
 - **插件 SDK**（`kaleido-sdk`）— `ToolPlugin<T>` builder + `define_tool!` 宏
 - **AI 工具生成** — `KaleidoApp::create_ai_tool(描述, 执行函数)` 从 JSON 描述注册工具并发出 `tool_upgraded` 事件
 - Cordis 服务插件：依赖注入（`Inject`）+ fiber 生命周期管理
@@ -126,7 +127,7 @@ crates/
   kaleido-traits/     契约：FileCodec、ImageStore、HistoryKeeper、Tool、事件
   kaleido-services/   实现 + Cordis 插件 + 应用容器（KaleidoApp）
   kaleido-sdk/        插件 SDK：ToolPlugin builder + define_tool! 宏
-  kaleido-plugin-host/插件宿主：manifest/loader/manager + AIToolGenerator
+  kaleido-plugin-host/插件宿主：manifest/loader/manager + wasmtime 运行时 + AIToolGenerator
 apps/
   cli/                命令行图像工具
   desktop/            GPUI 桌面宿主
@@ -147,8 +148,9 @@ tests/                集成测试夹具（占位）
 - [x] 插件 SDK（`kaleido-sdk`）：`ToolPlugin` builder + `define_tool!` 宏
 - [x] 插件宿主框架（`kaleido-plugin-host`）+ `AIToolGenerator`
 - [x] WIT 接口定义（WASM 边界）
+- [x] WASM 运行时（wasmtime）— 加载编译好的 `.wasm` 工具插件
 - [x] GPUI 桌面宿主 + 动态插件工具栏
-- [ ] `kaleido-plugin-host` 接入 WASM 运行时（wasmtime）
+- [ ] 示例 WASM 工具插件（把工具编译成 `.wasm` 并加载）
 - [ ] AI 生成工具端到端（生成 → 编译 → 加载 → `tool_upgraded`）
 - [ ] 插件 UI 面板
 

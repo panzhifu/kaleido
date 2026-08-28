@@ -26,11 +26,12 @@ Kaleido is an image editor under construction. Its architecture is deliberately 
 - `Tool` trait with **parameter schemas** (`ParamType` / `ParamSchema` / `ToolSchema`): auto-generated UI forms, validation and default values
 - **WIT interface** (`wit/kaleido.wit`) — WASM boundary: `tool`, `plugin-lifecycle`, `host-functions` interfaces + `world kaleido-plugin`
 - **Plugin host** (`kaleido-plugin-host`) — `PluginManifest`, `Plugin`/`PluginLoader` traits, `PluginManager`, and `AIToolGenerator` for dynamically generated tools
+- **WASM runtime** — compiled `.wasm` plugins are loaded and executed via **wasmtime**: `WasmPluginManager` scans plugin directories, instantiates modules (C ABI: `plugin_init` / `tool_apply` / …), and registers every tool into the registry. Host functions (`host_log`, `host_emit_event`) are linked in
 - **Plugin SDK** (`kaleido-sdk`) — `ToolPlugin<T>` builder + `define_tool!` macro
 - **AI tool generation** — `KaleidoApp::create_ai_tool(description, apply_fn)` registers a tool from a JSON description and emits `tool_upgraded`
 
 ### Applications
-- **`kaleido-cli`** — image info / convert / list-formats / brightness / invert / resize / grayscale
+- **`kaleido-cli`** — image info / convert / list-formats / brightness / invert / resize / grayscale, plus plugin commands: `list-tools`, `tool-schema`, `run` (custom params), `create-tool` (AI-generated tools)
 - **`kaleido-desktop`** — GPUI host with a canvas and a **toolbar generated dynamically from the plugin registry**
 
 ### Plugin system
@@ -130,7 +131,7 @@ crates/
   kaleido-traits/      Contracts: FileCodec, ImageStore, HistoryKeeper, Tool, events
   kaleido-services/    Implementations + Cordis plugins + application container (KaleidoApp)
   kaleido-sdk/         Plugin SDK: ToolPlugin builder + define_tool! macro
-  kaleido-plugin-host/ Plugin host: manifest/loader/manager + AIToolGenerator
+  kaleido-plugin-host/ Plugin host: manifest/loader/manager + wasmtime runtime + AIToolGenerator
 apps/
   cli/                Command-line image tool
   desktop/            GPUI desktop host
@@ -151,8 +152,9 @@ tests/                Integration test fixtures (placeholder)
 - [x] Plugin SDK (`kaleido-sdk`): `ToolPlugin` builder + `define_tool!` macro
 - [x] Plugin host framework (`kaleido-plugin-host`) + `AIToolGenerator`
 - [x] WIT interface definitions for the WASM boundary
+- [x] WASM runtime (`wasmtime`) — load compiled `.wasm` tool plugins
 - [x] GPUI desktop host with dynamic plugin toolbar
-- [ ] WASM runtime (`wasmtime`) in `kaleido-plugin-host`
+- [ ] Example WASM tool plugin (compile a tool to `.wasm` and load it)
 - [ ] AI-generated tools end-to-end (generate → compile → load → `tool_upgraded`)
 - [ ] Plugin UI panels
 
