@@ -81,7 +81,7 @@ pub fn tool_registry_plugin() -> PluginHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaleido_core::{Image, ImageResult, Pixel, PixelFormat};
+    use kaleido_core::{Image, ImageResult, Pixel};
 
     /// A trivial test tool that fills the image red.
     struct RedFill;

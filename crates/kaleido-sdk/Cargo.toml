@@ -2,9 +2,10 @@
 name = "kaleido-sdk"
 version.workspace = true
 edition.workspace = true
+description = "Kaleido Plugin SDK — helpers for building tool plugins"
 
 [dependencies]
 kaleido-core = { path = "../kaleido-core" }
 kaleido-traits = { path = "../kaleido-traits" }
-serde.workspace = true
+cordis-rs.workspace = true
 serde_json.workspace = true

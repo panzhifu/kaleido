@@ -1,0 +1,199 @@
+// Kaleido WIT (WebAssembly Interface Types) definitions.
+//
+// These interfaces define the boundary between the Kaleido host and WASM
+// plugins. They are written in the WIT format and can be used with
+// `wit-bindgen` to generate Rust bindings for both the host and the
+// plugin guest.
+//
+// # Architecture
+//
+// ```text
+// ┌─────────────────────────────────────────────────────────────┐
+// │                     Kaleido Host                            │
+// │                                                             │
+// │  ┌──────────────┐    wit-bindgen    ┌──────────────────┐   │
+// │  │ Plugin Host  │ ◄─── host bindings │  WIT Interface   │   │
+// │  │ (wasmtime)   │                   │  (this file)     │   │
+// │  └──────┬───────┘                   └──────────────────┘   │
+// │         │                                                   │
+// │         │ host calls                                        │
+// │         ▼                                                   │
+// │  ┌──────────────┐                   ┌──────────────────┐   │
+// │  │  WASM Plugin │ ─── guest calls → │   Kaleido SDK    │   │
+// │  │  (guest)     │                   │   (guest-side)   │   │
+// │  └──────────────┘                   └──────────────────┘   │
+// └─────────────────────────────────────────────────────────────┘
+// ```
+//
+// # Future Use
+//
+// When `wasmtime` support is added to `kaleido-plugin-host`, these
+// definitions will be used with `wit-bindgen-wasmtime` to generate:
+// - Host-side bindings (the glue code that calls into WASM)
+// - Guest-side bindings (the glue code that plugins use to call host functions)
+
+package kaleido:plugin@1.0.0;
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/// Pixel format identifiers.
+enum pixel-format {
+    rgba8,
+    rgb8,
+    gray8,
+    gray-a8,
+    rgba16,
+}
+
+/// A RGBA pixel.
+record pixel {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+}
+
+/// Image metadata.
+record image-metadata {
+    properties: list<tuple<string, string>>,
+    created-at: option<string>,
+    description: option<string>,
+}
+
+/// Image data passed across the WASM boundary.
+///
+/// Pixels are transferred as a flat RGBA8 buffer for simplicity.
+/// The host converts to/from the internal format as needed.
+record image-data {
+    width: u32,
+    height: u32,
+    data: list<u8>,
+    metadata: image-metadata,
+}
+
+/// Parameter type for UI form generation.
+enum param-type {
+    integer,
+    unsigned,
+    float,
+    boolean,
+    string,
+    %enum,
+    color,
+}
+
+/// Numeric constraints for parameter validation.
+record numeric-constraints {
+    min: option<s64>,
+    max: option<s64>,
+    step: option<s64>,
+}
+
+/// Schema for a single tool parameter.
+record param-schema {
+    name: string,
+    label: option<string>,
+    param-type: param-type,
+    description: option<string>,
+    default-value: option<string>,
+    constraints: option<numeric-constraints>,
+    enum-options: option<tuple<string, string>>,
+    required: bool,
+}
+
+/// Full tool schema.
+record tool-schema {
+    tool-name: string,
+    label: string,
+    description: string,
+    params: list<param-schema>,
+}
+
+// ---------------------------------------------------------------------------
+// Tool Interface
+// ---------------------------------------------------------------------------
+
+/// The tool interface that WASM plugins implement.
+///
+/// Each WASM plugin exports a component that implements this interface.
+/// The host calls these functions to discover and invoke the tool.
+interface tool {
+    /// Returns the tool's name.
+    fn name() -> string;
+
+    /// Returns the tool's menu path.
+    fn menu-path() -> string;
+
+    /// Returns the tool's description.
+    fn description() -> string;
+
+    /// Returns the tool's parameter schema.
+    fn schema() -> tool-schema;
+
+    /// Applies the tool's transformation to the image.
+    ///
+    /// The image data is passed in as RGBA8 bytes. The plugin modifies
+    /// the data in place and returns the modified image.
+    /// Parameters are passed as a JSON string.
+    fn apply(image: image-data, params: string) -> result<image-data, string>;
+}
+
+// ---------------------------------------------------------------------------
+// Plugin Lifecycle
+// ---------------------------------------------------------------------------
+
+/// Plugin lifecycle interface.
+///
+/// WASM plugins implement this for initialization and cleanup.
+interface plugin-lifecycle {
+    /// Called when the plugin is loaded.
+    ///
+    /// Use this to initialize resources, allocate memory, etc.
+    fn init() -> result<, string>;
+
+    /// Called when the plugin is being unloaded.
+    ///
+    /// Use this to release resources.
+    fn shutdown() -> result<, string>;
+
+    /// Returns the plugin manifest as JSON.
+    fn manifest() -> string;
+}
+
+// ---------------------------------------------------------------------------
+// Host Functions (provided by the host, called by plugins)
+// ---------------------------------------------------------------------------
+
+/// Host functions available to WASM plugins.
+///
+/// These functions are imported by the WASM guest and implemented by
+/// the host. They allow plugins to:
+/// - Log messages
+/// - Emit events
+/// - Access host capabilities
+interface host-functions {
+    /// Logs a message through the host's logging system.
+    fn log(level: string, message: string);
+
+    /// Emits an event through the host's event system.
+    fn emit-event(name: string, payload: string);
+
+    /// Returns the API version supported by the host.
+    fn api-version() -> string;
+}
+
+// ---------------------------------------------------------------------------
+// World Definition
+// ---------------------------------------------------------------------------
+
+/// The main world that combines all interfaces.
+///
+/// A WASM plugin component implements this world, exporting the tool
+/// and lifecycle interfaces while importing the host functions.
+world kaleido-plugin {
+    export tool;
+    export plugin-lifecycle;
+    import host-functions;
+}

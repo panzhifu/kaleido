@@ -8,7 +8,7 @@
 
 use cordis::{Inject, PluginHandle, PluginOutput, plugin_sync};
 use kaleido_core::{Image, ImageResult, Pixel};
-use kaleido_traits::{Tool, ToolParams, ToolRegistry};
+use kaleido_traits::{NumericConstraints, ParamSchema, ParamType, Tool, ToolParams, ToolRegistry};
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
@@ -73,6 +73,22 @@ impl Tool for BrightnessTool {
         }
         Ok(())
     }
+
+    fn schema(&self) -> kaleido_traits::ToolSchema {
+        use kaleido_traits::ToolSchema;
+        ToolSchema::new("brightness", "亮度", "Adjust image brightness").with_param(
+            ParamSchema::new("value", ParamType::Integer)
+                .with_label("亮度值")
+                .with_description("Brightness adjustment (-255..255)")
+                .with_default(serde_json::json!(0))
+                .with_constraints(NumericConstraints {
+                    min: Some(-255),
+                    max: Some(255),
+                    step: Some(1),
+                })
+                .required(),
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -113,14 +129,11 @@ mod tests {
     #[test]
     fn test_apply_brightness() {
         let tool = BrightnessTool::new(0);
-        let mut image = Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100))
-            .unwrap();
+        let mut image =
+            Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
 
         tool.apply(&mut image, &json!({ "value": 50 })).unwrap();
-        assert_eq!(
-            image.get_pixel(0, 0).unwrap(),
-            Pixel::rgb(150, 150, 150)
-        );
+        assert_eq!(image.get_pixel(0, 0).unwrap(), Pixel::rgb(150, 150, 150));
 
         tool.apply(&mut image, &json!({ "value": -200 })).unwrap();
         assert_eq!(image.get_pixel(0, 0).unwrap(), Pixel::rgb(0, 0, 0));
@@ -137,8 +150,57 @@ mod tests {
     #[test]
     fn test_uses_default_when_params_missing() {
         let tool = BrightnessTool::new(10);
-        let mut image = Image::with_color(1, 1, PixelFormat::Rgba8, Pixel::rgb(10, 10, 10)).unwrap();
+        let mut image =
+            Image::with_color(1, 1, PixelFormat::Rgba8, Pixel::rgb(10, 10, 10)).unwrap();
         tool.apply(&mut image, &json!({})).unwrap();
         assert_eq!(image.get_pixel(0, 0).unwrap(), Pixel::rgb(20, 20, 20));
+    }
+
+    #[test]
+    fn test_schema_declares_params() {
+        let tool = BrightnessTool::new(0);
+        let schema = tool.schema();
+        assert_eq!(schema.tool_name, "brightness");
+        assert_eq!(schema.params.len(), 1);
+        assert_eq!(schema.params[0].name, "value");
+        assert_eq!(schema.params[0].param_type, ParamType::Integer);
+        assert!(schema.params[0].required);
+    }
+
+    #[test]
+    fn test_schema_validates_params() {
+        let tool = BrightnessTool::new(0);
+        let schema = tool.schema();
+
+        // Valid value.
+        schema.validate_params(&json!({ "value": 50 })).unwrap();
+
+        // Out of range.
+        assert!(schema.validate_params(&json!({ "value": 300 })).is_err());
+
+        // Wrong type.
+        assert!(schema.validate_params(&json!({ "value": "abc" })).is_err());
+
+        // Missing required.
+        assert!(schema.validate_params(&json!({})).is_err());
+    }
+
+    #[test]
+    fn test_schema_json_schema() {
+        let tool = BrightnessTool::new(0);
+        let schema = tool.schema();
+        let json_schema = schema.to_json_schema();
+        assert_eq!(json_schema["type"], "object");
+        assert!(json_schema["properties"]["value"].is_object());
+        assert_eq!(json_schema["properties"]["value"]["minimum"], -255);
+        assert_eq!(json_schema["properties"]["value"]["maximum"], 255);
+    }
+
+    #[test]
+    fn test_schema_apply_defaults() {
+        let tool = BrightnessTool::new(0);
+        let schema = tool.schema();
+        let params = schema.apply_defaults(&json!({}));
+        assert_eq!(params["value"], 0);
     }
 }

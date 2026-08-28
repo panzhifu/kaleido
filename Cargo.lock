@@ -3518,6 +3518,7 @@ dependencies = [
  "anyhow",
  "cordis-rs",
  "kaleido-core",
+ "kaleido-sdk",
  "kaleido-traits",
  "serde",
  "serde_json",
@@ -3529,9 +3530,9 @@ dependencies = [
 name = "kaleido-sdk"
 version = "0.1.0"
 dependencies = [
+ "cordis-rs",
  "kaleido-core",
  "kaleido-traits",
- "serde",
  "serde_json",
 ]
 
@@ -3545,6 +3546,8 @@ dependencies = [
  "crossbeam-channel",
  "image",
  "kaleido-core",
+ "kaleido-plugin-host",
+ "kaleido-sdk",
  "kaleido-traits",
  "serde",
  "serde_json",

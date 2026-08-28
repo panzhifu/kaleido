@@ -17,9 +17,17 @@ Kaleido is an image editor under construction. Its architecture is deliberately 
 ### Service layer (`kaleido-traits` + `kaleido-services`)
 - **ImageStore** — single source of truth for the current image (single write path)
 - **FileCodec** — JPEG / PNG / WebP read+write, BMP / GIF read-only
+- **FileCodecRegistry** — per-format codec plugin system (`FormatCodec` trait); third-party plugins can add new formats (TIFF, AVIF, …) at runtime
 - **HistoryKeeper** — undo / redo with bounded snapshot-based commands (default 50 steps)
 - **ToolRegistry** — dynamic registry of tools provided by plugins
 - Typed event system unified on Cordis (14 event names + typed payloads, lifecycle-managed subscriptions)
+
+### Plugin contracts
+- `Tool` trait with **parameter schemas** (`ParamType` / `ParamSchema` / `ToolSchema`): auto-generated UI forms, validation and default values
+- **WIT interface** (`wit/kaleido.wit`) — WASM boundary: `tool`, `plugin-lifecycle`, `host-functions` interfaces + `world kaleido-plugin`
+- **Plugin host** (`kaleido-plugin-host`) — `PluginManifest`, `Plugin`/`PluginLoader` traits, `PluginManager`, and `AIToolGenerator` for dynamically generated tools
+- **Plugin SDK** (`kaleido-sdk`) — `ToolPlugin<T>` builder + `define_tool!` macro
+- **AI tool generation** — `KaleidoApp::create_ai_tool(description, apply_fn)` registers a tool from a JSON description and emits `tool_upgraded`
 
 ### Applications
 - **`kaleido-cli`** — image info / convert / list-formats / brightness / invert / resize / grayscale
@@ -118,18 +126,18 @@ See [`plugins/examples/invert`](plugins/examples/invert) for the complete exampl
 
 ```
 crates/
-  kaleido-core/       Image data model (pixel buffers, formats, geometry)
-  kaleido-traits/     Contracts: FileCodec, ImageStore, HistoryKeeper, Tool, events
-  kaleido-services/   Implementations + Cordis plugins + application container (KaleidoApp)
-  kaleido-sdk/        Plugin SDK (placeholder)
-  kaleido-plugin-host/WASM plugin host (placeholder)
+  kaleido-core/        Image data model (pixel buffers, formats, geometry)
+  kaleido-traits/      Contracts: FileCodec, ImageStore, HistoryKeeper, Tool, events
+  kaleido-services/    Implementations + Cordis plugins + application container (KaleidoApp)
+  kaleido-sdk/         Plugin SDK: ToolPlugin builder + define_tool! macro
+  kaleido-plugin-host/ Plugin host: manifest/loader/manager + AIToolGenerator
 apps/
   cli/                Command-line image tool
   desktop/            GPUI desktop host
 plugins/examples/
-  brightness/         Brightness tool plugin
+  brightness/         Brightness tool plugin (with parameter schema)
   invert/             Invert tool plugin
-wit/                  WASM interface definitions (placeholder)
+wit/                  WASM interface definitions (tool, lifecycle, host functions)
 tests/                Integration test fixtures (placeholder)
 ```
 
@@ -138,12 +146,15 @@ tests/                Integration test fixtures (placeholder)
 - [x] Core image library
 - [x] Service layer (store / codec / history / events) on Cordis
 - [x] Tool plugin contract + example plugins (native, in-process)
+- [x] Tool parameter schemas (auto-generated UI forms)
+- [x] File format codec plugin system
+- [x] Plugin SDK (`kaleido-sdk`): `ToolPlugin` builder + `define_tool!` macro
+- [x] Plugin host framework (`kaleido-plugin-host`) + `AIToolGenerator`
+- [x] WIT interface definitions for the WASM boundary
 - [x] GPUI desktop host with dynamic plugin toolbar
-- [ ] Parameter schemas for tools (auto-generated UI forms)
-- [ ] File format codecs as plugins
-- [ ] WASM plugin host (`kaleido-plugin-host` + wit interface)
-- [ ] Plugin SDK (`kaleido-sdk`)
-- [ ] AI-generated tools (`ToolUpgradedEvent`)
+- [ ] WASM runtime (`wasmtime`) in `kaleido-plugin-host`
+- [ ] AI-generated tools end-to-end (generate → compile → load → `tool_upgraded`)
+- [ ] Plugin UI panels
 
 ## License
 

@@ -2,10 +2,12 @@
 name = "kaleido-plugin-host"
 version.workspace = true
 edition.workspace = true
+description = "WASM plugin host for Kaleido — loads and runs WASM-based tool plugins"
 
 [dependencies]
 kaleido-core = { path = "../kaleido-core" }
 kaleido-traits = { path = "../kaleido-traits" }
+kaleido-sdk = { path = "../kaleido-sdk" }
 cordis-rs.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true

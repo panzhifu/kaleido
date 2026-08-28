@@ -29,14 +29,14 @@ impl Tool for InvertTool {
         for y in 0..image.height() {
             for x in 0..image.width() {
                 let p = image.get_pixel(x, y)?;
-                image.set_pixel(
-                    x,
-                    y,
-                    Pixel::new(255 - p.r, 255 - p.g, 255 - p.b, p.a),
-                )?;
+                image.set_pixel(x, y, Pixel::new(255 - p.r, 255 - p.g, 255 - p.b, p.a))?;
             }
         }
         Ok(())
+    }
+
+    fn schema(&self) -> kaleido_traits::ToolSchema {
+        kaleido_traits::ToolSchema::new("invert", "反相", "Invert all pixel colours")
     }
 }
 
