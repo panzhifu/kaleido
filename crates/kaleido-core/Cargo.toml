@@ -7,3 +7,10 @@ edition.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 wide.workspace = true
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "pixel_convert"
+harness = false
