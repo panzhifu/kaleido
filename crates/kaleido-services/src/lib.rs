@@ -1,6 +1,7 @@
 pub mod ai_agent_impl;
 pub mod app;
 pub mod async_io;
+pub mod blend_simd;
 pub mod canvas;
 pub mod cordis_plugins;
 pub mod file_codec_impl;
@@ -29,4 +30,5 @@ pub use op_graph::{GraphExecutor, Op, OpFormats, FusedOp, NodeId, OpGraph};
 pub use tile_history::{TileHistoryKeeper, TileSnapshot, TileSnapshotCommand};
 pub use tool_registry::{ToolRegistryImpl, tool_registry_plugin};
 pub use async_io::{AsyncImageLoader, BackgroundSaver, LoadPriority, LoadRequestId, LoadState};
+pub use blend_simd::{blend_8_pixels, BlendModeSimd};
 pub use canvas::{CanvasService, ProgressiveRenderer, RenderQuality, Viewport};

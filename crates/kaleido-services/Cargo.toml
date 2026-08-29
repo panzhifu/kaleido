@@ -19,3 +19,4 @@ image.workspace = true
 chrono.workspace = true
 crossbeam-channel.workspace = true
 rayon.workspace = true
+wide.workspace = true
