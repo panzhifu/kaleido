@@ -49,11 +49,18 @@ pub enum LoadPriority {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Rect {
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
+pub struct Rect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Rect {
+    /// Creates a new rect.
+    pub fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+        Self { x, y, width, height }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +156,7 @@ impl AsyncImageLoader {
             // Phase 1: Load preview (low resolution).
             // For now, we load the full image and downscale.
             // TODO: Use codec's built-in preview/metadata if available.
-            let preview = match Self::load_preview(&registry, &path_clone).await {
+            let _preview = match Self::load_preview(&registry, &path_clone).await {
                 Ok(img) => img,
                 Err(e) => {
                     return LoadState::Failed(format!("Preview load failed: {}", e));
