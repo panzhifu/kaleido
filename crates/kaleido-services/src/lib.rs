@@ -1,14 +1,22 @@
+pub mod ai_agent_impl;
 pub mod app;
+pub mod async_io;
+pub mod canvas;
 pub mod cordis_plugins;
 pub mod file_codec_impl;
 pub mod file_codec_registry;
 pub mod history_keeper_impl;
 pub mod image_store_impl;
+pub mod layer;
+pub mod op_graph;
+pub mod tile_history;
 pub mod tool_registry;
 
+pub use ai_agent_impl::AIAgentImpl;
 pub use app::{AppConfig, KaleidoApp};
 pub use cordis_plugins::{
-    HistoryConfig, file_codec_plugin, history_keeper_plugin, image_store_plugin,
+    HistoryConfig, ai_agent_plugin, file_codec_plugin, file_codec_registry_plugin,
+    history_keeper_plugin, image_store_plugin, wasm_plugin_manager_plugin,
 };
 pub use file_codec_impl::FileCodecImpl;
 pub use file_codec_registry::{
@@ -16,4 +24,9 @@ pub use file_codec_registry::{
 };
 pub use history_keeper_impl::{HistoryKeeperImpl, SnapshotCommand};
 pub use image_store_impl::ImageStoreImpl;
+pub use layer::{BlendMode, Layer, LayerContent, LayerId, LayerStack};
+pub use op_graph::{GraphExecutor, Op, OpFormats, FusedOp, NodeId, OpGraph};
+pub use tile_history::{TileHistoryKeeper, TileSnapshot, TileSnapshotCommand};
 pub use tool_registry::{ToolRegistryImpl, tool_registry_plugin};
+pub use async_io::{AsyncImageLoader, BackgroundSaver, LoadPriority, LoadRequestId, LoadState};
+pub use canvas::{CanvasService, ProgressiveRenderer, RenderQuality, Viewport};

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use cordis::{Inject, PluginHandle, service_sync};
 use kaleido_plugin_host::WasmPluginManager;
 
-use crate::{FileCodecImpl, HistoryKeeperImpl, ImageStoreImpl};
+use crate::{FileCodecImpl, FileCodecRegistryImpl, HistoryKeeperImpl, ImageStoreImpl};
 use kaleido_traits::{FileCodec, HistoryKeeper, ImageStore, resolve_tool_registry};
 
 // ---------------------------------------------------------------------------
@@ -24,15 +24,33 @@ pub fn file_codec_plugin() -> PluginHandle {
     })
 }
 
+/// Plugin for [`FileCodecRegistryImpl`] — no dependencies.
+///
+/// Provides the per-format codec registry as a Cordis service with the
+/// built-in codecs (JPEG / PNG / WebP / TIFF / BMP / GIF) pre-registered.
+/// Third-party plugins can resolve it via dependency injection and call
+/// `register_codec` to add new formats at runtime.
+pub fn file_codec_registry_plugin() -> PluginHandle {
+    service_sync::<FileCodecRegistryImpl, (), _>(
+        "file_codec_registry",
+        Inject::none(),
+        |_ctx, _config| Ok(FileCodecRegistryImpl::with_built_in()),
+    )
+}
+
 /// Plugin for [`ImageStoreImpl`] — depends on `file_codec`.
 ///
 /// Events are emitted through the plugin's own Cordis [`Context`], so no
 /// separate event-bus dependency is needed.
 pub fn image_store_plugin() -> PluginHandle {
-    service_sync::<ImageStoreImpl, (), _>("image_store", Inject::new(["file_codec"]), |ctx, _config| {
-        let codec = ctx.require::<FileCodecImpl>("file_codec")?;
-        Ok(ImageStoreImpl::new(codec as Arc<dyn FileCodec>, ctx))
-    })
+    service_sync::<ImageStoreImpl, (), _>(
+        "image_store",
+        Inject::new(["file_codec"]),
+        |ctx, _config| {
+            let codec = ctx.require::<FileCodecImpl>("file_codec")?;
+            Ok(ImageStoreImpl::new(codec as Arc<dyn FileCodec>, ctx))
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -95,11 +113,7 @@ pub fn wasm_plugin_manager_plugin(plugin_dirs: Vec<PathBuf>) -> PluginHandle {
             for dir in &plugin_dirs {
                 if dir.exists() {
                     if let Err(e) = manager.load_plugin(dir) {
-                        tracing::warn!(
-                            "Failed to load WASM plugin from {}: {}",
-                            dir.display(),
-                            e
-                        );
+                        tracing::warn!("Failed to load WASM plugin from {}: {}", dir.display(), e);
                     }
                 }
             }
@@ -114,8 +128,31 @@ pub fn wasm_plugin_manager_plugin(plugin_dirs: Vec<PathBuf>) -> PluginHandle {
 }
 
 // ---------------------------------------------------------------------------
-// Tests
-// ------------------------------------------------------------------------------
+// AI Agent
+// ---------------------------------------------------------------------------
+
+/// Plugin for [`AIAgentImpl`] — depends on `image_store` and `tool_registry`.
+///
+/// On activation, resolves the image store and tool registry from the
+/// context, then creates an [`AIAgentImpl`] that can plan and execute
+/// multi-step image editing operations.
+pub fn ai_agent_plugin() -> PluginHandle {
+    service_sync::<crate::AIAgentImpl, (), _>(
+        "ai_agent",
+        Inject::new(["image_store"]),
+        |ctx, _config| {
+            let image_store = ctx.require::<crate::ImageStoreImpl>("image_store")?;
+            let tool_registry = resolve_tool_registry(&ctx)?;;
+            Ok(crate::AIAgentImpl::new(
+                tool_registry,
+                image_store,
+                ctx.clone(),
+            ))
+        },
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -124,7 +161,7 @@ mod tests {
     use super::*;
     use cordis::Context;
     use kaleido_core::{Image, Pixel, PixelFormat};
-    use kaleido_traits::{HistoryKeeper, ImageStore, IMAGE_CHANGED};
+    use kaleido_traits::{HistoryKeeper, IMAGE_CHANGED, ImageFormat, ImageStore};
 
     /// Installs all service plugins and returns the context.
     fn setup() -> Context {
@@ -142,6 +179,32 @@ mod tests {
 
         let codec = ctx.require::<FileCodecImpl>("file_codec");
         assert!(codec.is_ok(), "file_codec should be available");
+    }
+
+    #[test]
+    fn test_cordis_provides_file_codec_registry() {
+        use crate::FileCodecRegistry;
+
+        let ctx = Context::new();
+        ctx.plugin(file_codec_registry_plugin(), ());
+
+        let registry = ctx.require::<FileCodecRegistryImpl>("file_codec_registry");
+        assert!(registry.is_ok(), "file_codec_registry should be available");
+
+        // Built-in codecs are pre-registered, including TIFF.
+        let registry = registry.unwrap();
+        assert!(
+            registry
+                .supported_read_formats()
+                .contains(&ImageFormat::Tiff)
+        );
+        assert!(
+            registry
+                .supported_write_formats()
+                .contains(&ImageFormat::Tiff)
+        );
+        assert!(registry.can_read("tiff"));
+        assert!(registry.can_write("tif"));
     }
 
     #[test]
@@ -170,12 +233,7 @@ mod tests {
         let ctx = Context::new();
         ctx.plugin(file_codec_plugin(), ());
         ctx.plugin(image_store_plugin(), ());
-        ctx.plugin(
-            history_keeper_plugin(),
-            HistoryConfig {
-                max_steps: 3,
-            },
-        );
+        ctx.plugin(history_keeper_plugin(), HistoryConfig { max_steps: 3 });
 
         let keeper = ctx.require::<HistoryKeeperImpl>("history_keeper").unwrap();
         // Verify the configured max_steps was applied by pushing 5 commands.

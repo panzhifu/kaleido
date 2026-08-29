@@ -18,3 +18,4 @@ tracing.workspace = true
 image.workspace = true
 chrono.workspace = true
 crossbeam-channel.workspace = true
+rayon.workspace = true

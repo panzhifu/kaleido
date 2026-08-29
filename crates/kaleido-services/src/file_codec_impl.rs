@@ -137,6 +137,13 @@ impl FileCodec for FileCodecImpl {
                         reason: format!("save: failed to encode {} as WebP: {}", path.display(), e),
                     })?;
             }
+            ImageFormat::Tiff => {
+                buffer
+                    .save_with_format(path, image::ImageFormat::Tiff)
+                    .map_err(|e| kaleido_core::ImageError::OperationFailed {
+                        reason: format!("save: failed to encode {} as TIFF: {}", path.display(), e),
+                    })?;
+            }
             ImageFormat::Bmp | ImageFormat::Gif => {
                 return Err(kaleido_core::ImageError::UnsupportedFormat {
                     format: kaleido_core::PixelFormat::Rgba8,
@@ -154,24 +161,30 @@ impl FileCodec for FileCodecImpl {
             ImageFormat::Webp,
             ImageFormat::Bmp,
             ImageFormat::Gif,
+            ImageFormat::Tiff,
         ]
     }
 
     fn supported_write_formats(&self) -> Vec<ImageFormat> {
-        vec![ImageFormat::Jpeg, ImageFormat::Png, ImageFormat::Webp]
+        vec![
+            ImageFormat::Jpeg,
+            ImageFormat::Png,
+            ImageFormat::Webp,
+            ImageFormat::Tiff,
+        ]
     }
 
     fn can_read(&self, extension: &str) -> bool {
         matches!(
             extension.to_lowercase().as_str(),
-            "jpg" | "jpeg" | "png" | "webp" | "bmp" | "gif"
+            "jpg" | "jpeg" | "png" | "webp" | "bmp" | "gif" | "tif" | "tiff"
         )
     }
 
     fn can_write(&self, extension: &str) -> bool {
         matches!(
             extension.to_lowercase().as_str(),
-            "jpg" | "jpeg" | "png" | "webp"
+            "jpg" | "jpeg" | "png" | "webp" | "tif" | "tiff"
         )
     }
 
@@ -224,12 +237,15 @@ mod tests {
         assert!(codec.can_read("webp"));
         assert!(codec.can_read("bmp"));
         assert!(codec.can_read("gif"));
-        assert!(!codec.can_read("tiff"));
+        assert!(codec.can_read("tiff"));
+        assert!(codec.can_read("tif"));
+        assert!(!codec.can_read("avif"));
         assert!(!codec.can_read(""));
 
         assert!(codec.can_write("jpg"));
         assert!(codec.can_write("png"));
         assert!(codec.can_write("webp"));
+        assert!(codec.can_write("tiff"));
         assert!(!codec.can_write("bmp"));
         assert!(!codec.can_write("gif"));
     }
@@ -242,7 +258,9 @@ mod tests {
         assert_eq!(ImageFormat::from_extension("webp"), Some(ImageFormat::Webp));
         assert_eq!(ImageFormat::from_extension("bmp"), Some(ImageFormat::Bmp));
         assert_eq!(ImageFormat::from_extension("gif"), Some(ImageFormat::Gif));
-        assert_eq!(ImageFormat::from_extension("tiff"), None);
+        assert_eq!(ImageFormat::from_extension("tiff"), Some(ImageFormat::Tiff));
+        assert_eq!(ImageFormat::from_extension("TIF"), Some(ImageFormat::Tiff));
+        assert_eq!(ImageFormat::from_extension("avif"), None);
         assert_eq!(ImageFormat::from_extension(""), None);
     }
 
@@ -258,6 +276,34 @@ mod tests {
             10,
             PixelFormat::Rgba8,
             kaleido_core::Pixel::new(255, 0, 0, 128),
+        )
+        .unwrap();
+
+        let codec = FileCodecImpl::new();
+        codec.save(&path, &img).unwrap();
+        assert!(path.exists());
+
+        let loaded = codec.load(&path).unwrap();
+        assert_eq!(loaded.width(), 10);
+        assert_eq!(loaded.height(), 10);
+
+        // Clean up.
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn test_save_and_load_tiff() {
+        let dir = temp_dir("test_save_and_load_tiff");
+        let _ = fs::create_dir_all(&dir);
+        // Both .tif and .tiff extensions must work.
+        let path = dir.join("test_save_and_load_tiff.tiff");
+
+        let img = Image::with_color(
+            10,
+            10,
+            PixelFormat::Rgba8,
+            kaleido_core::Pixel::new(0, 0, 255, 200),
         )
         .unwrap();
 

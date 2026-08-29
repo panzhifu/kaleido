@@ -19,6 +19,8 @@ pub enum ImageFormat {
     Bmp,
     /// GIF — supports animation (first frame only in MVP).
     Gif,
+    /// TIFF — tagged image file format, supports layers/multi-page (first page in MVP).
+    Tiff,
 }
 
 impl ImageFormat {
@@ -30,6 +32,7 @@ impl ImageFormat {
             Self::Webp => "webp",
             Self::Bmp => "bmp",
             Self::Gif => "gif",
+            Self::Tiff => "tif",
         }
     }
 
@@ -41,6 +44,7 @@ impl ImageFormat {
             "webp" => Some(Self::Webp),
             "bmp" => Some(Self::Bmp),
             "gif" => Some(Self::Gif),
+            "tif" | "tiff" => Some(Self::Tiff),
             _ => None,
         }
     }
@@ -53,6 +57,7 @@ impl ImageFormat {
             Self::Webp => "image/webp",
             Self::Bmp => "image/bmp",
             Self::Gif => "image/gif",
+            Self::Tiff => "image/tiff",
         }
     }
 }
@@ -76,6 +81,7 @@ impl ImageFormat {
 /// | JPEG   | ✅   | ✅    |
 /// | PNG    | ✅   | ✅    |
 /// | WebP   | ✅   | ✅    |
+/// | TIFF   | ✅   | ✅    |
 /// | BMP    | ✅   | ❌    |
 /// | GIF    | ✅   | ❌    |
 pub trait FileCodec: Send + Sync + 'static {

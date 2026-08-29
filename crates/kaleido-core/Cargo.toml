@@ -6,3 +6,4 @@ edition.workspace = true
 [dependencies]
 thiserror.workspace = true
 serde.workspace = true
+wide.workspace = true

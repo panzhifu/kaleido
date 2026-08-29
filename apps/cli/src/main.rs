@@ -25,7 +25,7 @@ fn parse_tool_params(s: &str) -> Result<serde_json::Value, String> {
 fn parse_image_format(s: &str) -> Result<ImageFormat, String> {
     ImageFormat::from_extension(s).ok_or_else(|| {
         format!(
-            "Unknown format '{}'. Supported: jpg, jpeg, png, webp, bmp, gif",
+            "Unknown format '{}'. Supported: jpg, jpeg, png, webp, bmp, gif, tif, tiff",
             s
         )
     })

@@ -10,11 +10,13 @@ use std::sync::Arc;
 
 use cordis::{Context, Result};
 use kaleido_plugin_host::WasmPluginManager;
-use kaleido_traits::{FileCodec, HistoryKeeper, ImageStore, Tool, ToolRegistry};
+use kaleido_traits::{AIAgent, FileCodec, HistoryKeeper, ImageStore, Tool, ToolRegistry};
 
+use crate::AIAgentImpl;
+use crate::FileCodecRegistry;
 use crate::cordis_plugins::{
-    HistoryConfig, file_codec_plugin, history_keeper_plugin, image_store_plugin,
-    wasm_plugin_manager_plugin,
+    HistoryConfig, ai_agent_plugin, file_codec_plugin, file_codec_registry_plugin,
+    history_keeper_plugin, image_store_plugin, wasm_plugin_manager_plugin,
 };
 use crate::tool_registry_plugin;
 
@@ -54,10 +56,12 @@ impl Default for AppConfig {
 ///         ├── tool_registry     (no deps)
 ///         ├── wasm_plugin_manager (← tool_registry)
 ///         ├── file_codec        (no deps)
+///         ├── file_codec_registry (no deps, built-in codecs pre-registered)
 ///         ├── image_store       (← file_codec)
-///         └── history_keeper    (← image_store)
+///         ├── history_keeper    (← image_store)
+///         └── ai_agent          (← image_store + tool_registry)
 ///         │
-///         ├── app.image_store() / history_keeper() / ...   typed accessors
+///         ├── app.image_store() / ai_agent() / ...   typed accessors
 ///         └── app.dispose()  ──►  dispose root fiber → unload all services
 /// ```
 ///
@@ -67,10 +71,12 @@ impl Default for AppConfig {
 pub struct KaleidoApp {
     ctx: Context,
     file_codec: Arc<dyn FileCodec>,
+    file_codec_registry: Arc<dyn FileCodecRegistry>,
     image_store: Arc<dyn ImageStore>,
     history_keeper: Arc<dyn HistoryKeeper>,
     tool_registry: Arc<dyn ToolRegistry>,
     wasm_plugin_manager: Arc<WasmPluginManager>,
+    ai_agent: Arc<AIAgentImpl>,
 }
 
 impl KaleidoApp {
@@ -89,6 +95,7 @@ impl KaleidoApp {
         ctx.plugin(tool_registry_plugin(), ());
         ctx.plugin(wasm_plugin_manager_plugin(config.wasm_plugin_dirs), ());
         ctx.plugin(file_codec_plugin(), ());
+        ctx.plugin(file_codec_registry_plugin(), ());
         ctx.plugin(image_store_plugin(), ());
         ctx.plugin(
             history_keeper_plugin(),
@@ -96,10 +103,13 @@ impl KaleidoApp {
                 max_steps: config.history_max_steps,
             },
         );
+        ctx.plugin(ai_agent_plugin(), ());
 
         // Resolve typed handles. `require` returns `Arc<T>`, coerced to the
         // trait-object type stored on the app.
         let file_codec: Arc<dyn FileCodec> = ctx.require::<crate::FileCodecImpl>("file_codec")?;
+        let file_codec_registry: Arc<dyn FileCodecRegistry> =
+            ctx.require::<crate::FileCodecRegistryImpl>("file_codec_registry")?;
         let image_store: Arc<dyn ImageStore> =
             ctx.require::<crate::ImageStoreImpl>("image_store")?;
         let history_keeper: Arc<dyn HistoryKeeper> =
@@ -107,14 +117,17 @@ impl KaleidoApp {
         let tool_registry: Arc<dyn ToolRegistry> = kaleido_traits::resolve_tool_registry(&ctx)?;
         let wasm_plugin_manager: Arc<WasmPluginManager> =
             ctx.require::<WasmPluginManager>("wasm_plugin_manager")?;
+        let ai_agent: Arc<AIAgentImpl> = ctx.require::<AIAgentImpl>("ai_agent")?;
 
         Ok(Self {
             ctx,
             file_codec,
+            file_codec_registry,
             image_store,
             history_keeper,
             tool_registry,
             wasm_plugin_manager,
+            ai_agent,
         })
     }
 
@@ -136,6 +149,14 @@ impl KaleidoApp {
         self.file_codec.clone()
     }
 
+    /// Returns the per-format codec registry (built-in + plugin-registered).
+    ///
+    /// Plugins can resolve this service from the Cordis context to register
+    /// new format codecs at runtime.
+    pub fn file_codec_registry(&self) -> Arc<dyn FileCodecRegistry> {
+        self.file_codec_registry.clone()
+    }
+
     /// Returns the image store service.
     pub fn image_store(&self) -> Arc<dyn ImageStore> {
         self.image_store.clone()
@@ -154,6 +175,11 @@ impl KaleidoApp {
     /// Returns the WASM plugin manager.
     pub fn wasm_plugin_manager(&self) -> Arc<WasmPluginManager> {
         self.wasm_plugin_manager.clone()
+    }
+
+    /// Returns the AI agent service.
+    pub fn ai_agent(&self) -> Arc<AIAgentImpl> {
+        self.ai_agent.clone()
     }
 
     /// Generates a new tool from an AI description and registers it.
@@ -234,6 +260,13 @@ mod tests {
                 .supported_read_formats()
                 .contains(&kaleido_traits::ImageFormat::Png)
         );
+        // TIFF is now built-in.
+        assert!(
+            app.file_codec_registry()
+                .supported_read_formats()
+                .contains(&kaleido_traits::ImageFormat::Tiff)
+        );
+        assert!(app.file_codec_registry().can_write("tiff"));
     }
 
     #[test]

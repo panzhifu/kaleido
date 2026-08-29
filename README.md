@@ -16,8 +16,8 @@ Kaleido is an image editor under construction. Its architecture is deliberately 
 
 ### Service layer (`kaleido-traits` + `kaleido-services`)
 - **ImageStore** — single source of truth for the current image (single write path)
-- **FileCodec** — JPEG / PNG / WebP read+write, BMP / GIF read-only
-- **FileCodecRegistry** — per-format codec plugin system (`FormatCodec` trait); third-party plugins can add new formats (TIFF, AVIF, …) at runtime
+- **FileCodec** — JPEG / PNG / WebP / TIFF read+write, BMP / GIF read-only
+- **FileCodecRegistry** — per-format codec plugin system (`FormatCodec` trait) exposed as a **Cordis service**; third-party plugins can register new formats (e.g. AVIF) at runtime via dependency injection
 - **HistoryKeeper** — undo / redo with bounded snapshot-based commands (default 50 steps)
 - **ToolRegistry** — dynamic registry of tools provided by plugins
 - Typed event system unified on Cordis (14 event names + typed payloads, lifecycle-managed subscriptions)

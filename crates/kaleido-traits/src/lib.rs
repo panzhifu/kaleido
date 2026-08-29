@@ -1,9 +1,11 @@
+pub mod ai_agent;
 pub mod events;
 pub mod file_codec;
 pub mod history_keeper;
 pub mod image_store;
 pub mod tool;
 
+pub use ai_agent::*;
 pub use events::{
     AI_ACTION_EXECUTED, AI_THINKING, AiActionExecutedEvent, AiThinkingEvent, HISTORY_CHANGED,
     HistoryChangedEvent, IMAGE_CHANGED, IMAGE_CLEARED, IMAGE_LOADED, IMAGE_SAVED,

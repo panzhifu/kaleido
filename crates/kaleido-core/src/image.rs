@@ -894,7 +894,7 @@ pub const fn align_stride(stride: u32, alignment: u32) -> u32 {
 
 /// Reads a pixel from `buf` in the given format and returns it as RGBA8.
 #[inline]
-fn read_pixel(buf: &[u8], format: PixelFormat) -> Pixel {
+pub(crate) fn read_pixel(buf: &[u8], format: PixelFormat) -> Pixel {
     match format {
         PixelFormat::Rgba8 => Pixel::new(buf[0], buf[1], buf[2], buf[3]),
         PixelFormat::Rgb8 => Pixel::new(buf[0], buf[1], buf[2], 255),
@@ -917,7 +917,7 @@ fn read_pixel(buf: &[u8], format: PixelFormat) -> Pixel {
 
 /// Writes an RGBA8 pixel into `buf` using the given format.
 #[inline]
-fn write_pixel(buf: &mut [u8], format: PixelFormat, pixel: Pixel) {
+pub(crate) fn write_pixel(buf: &mut [u8], format: PixelFormat, pixel: Pixel) {
     match format {
         PixelFormat::Rgba8 => {
             buf[0] = pixel.r;

@@ -14,8 +14,8 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 
 ### 服务层（`kaleido-traits` + `kaleido-services`）
 - **ImageStore** — 当前图像的"单一数据源"（单一写路径）
-- **FileCodec** — JPEG / PNG / WebP 读写，BMP / GIF 只读
-- **FileCodecRegistry** — 按格式的编解码插件系统（`FormatCodec` trait）；第三方插件可在运行时注册新格式（TIFF、AVIF…）
+- **FileCodec** — JPEG / PNG / WebP / TIFF 读写，BMP / GIF 只读
+- **FileCodecRegistry** — 按格式的编解码插件系统（`FormatCodec` trait），作为 **Cordis 服务**暴露；第三方插件可通过依赖注入在运行时注册新格式（如 AVIF）
 - **HistoryKeeper** — 基于有界快照命令的撤销/重做（默认 50 步）
 - **ToolRegistry** — 插件提供的工具动态注册表
 - 类型化事件系统统一在 Cordis 之上（14 种事件名 + 类型化 payload，订阅随生命周期自动清理）

@@ -29,6 +29,8 @@ tracing = "0.1"
 chrono = "0.4"
 crossbeam-channel = "0.5"
 image = "0.25"
+wide = "0.7"
+rayon = "1.10"
 
 # GUI 框架（git 依赖；https 经全局 git insteadOf 重写为 ssh）
 gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }

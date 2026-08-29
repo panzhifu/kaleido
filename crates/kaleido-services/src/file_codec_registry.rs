@@ -28,6 +28,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
+use cordis::Service;
 use kaleido_core::{Image, ImageMetadata, ImageResult};
 use kaleido_traits::{FileCodec, ImageFormat};
 
@@ -159,7 +160,7 @@ impl FileCodecRegistryImpl {
     /// Creates a new registry with the built-in codecs pre-registered.
     ///
     /// The built-in codecs are backed by the `image` crate and support
-    /// JPEG, PNG, WebP, BMP (read-only), and GIF (read-only).
+    /// JPEG, PNG, WebP, TIFF, BMP (read-only), and GIF (read-only).
     pub fn with_built_in() -> Self {
         let registry = Self::new();
 
@@ -167,11 +168,16 @@ impl FileCodecRegistryImpl {
         registry.register_codec(Arc::new(BuiltInCodec::new(ImageFormat::Jpeg)));
         registry.register_codec(Arc::new(BuiltInCodec::new(ImageFormat::Png)));
         registry.register_codec(Arc::new(BuiltInCodec::new(ImageFormat::Webp)));
+        registry.register_codec(Arc::new(BuiltInCodec::new(ImageFormat::Tiff)));
         registry.register_codec(Arc::new(BuiltInCodec::new(ImageFormat::Bmp)));
         registry.register_codec(Arc::new(BuiltInCodec::new(ImageFormat::Gif)));
 
         registry
     }
+}
+
+impl Service for FileCodecRegistryImpl {
+    const NAME: &'static str = "file_codec_registry";
 }
 
 impl FileCodecRegistry for FileCodecRegistryImpl {
@@ -361,6 +367,7 @@ impl FormatCodec for BuiltInCodec {
             ImageFormat::Jpeg => vec!["jpg", "jpeg"],
             ImageFormat::Png => vec!["png"],
             ImageFormat::Webp => vec!["webp"],
+            ImageFormat::Tiff => vec!["tif", "tiff"],
             ImageFormat::Bmp => vec!["bmp"],
             ImageFormat::Gif => vec!["gif"],
         }
@@ -374,7 +381,9 @@ impl FormatCodec for BuiltInCodec {
         CodecCapability {
             can_read: true,
             can_write: match self.format {
-                ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::Webp => true,
+                ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::Webp | ImageFormat::Tiff => {
+                    true
+                }
                 ImageFormat::Bmp | ImageFormat::Gif => false,
             },
             can_read_metadata: false,
@@ -510,6 +519,8 @@ mod tests {
         let registry = FileCodecRegistryImpl::with_built_in();
         assert!(registry.get_codec_for_extension("jpg").is_some());
         assert!(registry.get_codec_for_extension("png").is_some());
-        assert!(registry.get_codec_for_extension("tiff").is_none());
+        assert!(registry.get_codec_for_extension("tiff").is_some());
+        assert!(registry.get_codec_for_extension("tif").is_some());
+        assert!(registry.get_codec_for_extension("avif").is_none());
     }
 }
