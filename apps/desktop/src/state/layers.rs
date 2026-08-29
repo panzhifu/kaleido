@@ -2,7 +2,7 @@
 
 use kaleido_services::layer::{Layer, LayerId, LayerStack};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LayersState {
     pub stack: LayerStack,
     pub active_layer: Option<LayerId>,

@@ -16,7 +16,7 @@ use crate::panels::*;
 use crate::state::*;
 use crate::theme::color;
 
-pub(crate) struct KaleidoEditor {
+pub struct KaleidoEditor {
     app: KaleidoApp,
     canvas: Entity<CanvasPanel>,
     layers: Entity<LayersPanel>,
@@ -32,7 +32,7 @@ pub(crate) struct KaleidoEditor {
 }
 
 impl KaleidoEditor {
-    fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         let app = KaleidoApp::boot(AppConfig::default()).expect("failed to boot Kaleido");
         app.context().plugin(brightness_tool_plugin(), BrightnessToolConfig::default());
         app.context().plugin(invert_tool_plugin(), ());
@@ -47,7 +47,7 @@ impl KaleidoEditor {
         let loader = AsyncImageLoader::new(file_codec);
         let saver = BackgroundSaver::new();
 
-        let mut editor = Self {
+        Self {
             app, canvas, layers, tool_params, history,
             viewport: ViewportState::default(),
             layers_state: LayersState::default(),
@@ -55,24 +55,10 @@ impl KaleidoEditor {
             loader, saver,
             image_path: None,
             status: "就绪".to_string(),
-        };
-
-        editor.setup_subscriptions(cx);
-        if let Some(path) = std::env::args().nth(1).map(PathBuf::from) {
-            editor.open_file(path, cx);
         }
-        editor
     }
 
-    fn setup_subscriptions(&mut self, cx: &mut Context<Self>) {
-        cx.subscribe(&self.tool_params, move |this, event, cx| {
-            if let crate::messages::ToolParamsEvent::Applied { name } = event {
-                this.apply_tool(name, cx);
-            }
-        }).detach();
-    }
-
-    fn open_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    pub fn open_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if self.app.file_codec_registry().load(&path).is_ok() {
             self.image_path = Some(path.clone());
             if let Ok(image) = self.app.file_codec_registry().load(&path) {
@@ -96,7 +82,7 @@ impl KaleidoEditor {
         }
     }
 
-    fn get_current_image(&self) -> Option<Image> {
+    pub fn get_current_image(&self) -> Option<Image> {
         let bg = self.layers_state.stack.background()?;
         let tiled = match &bg.content {
             kaleido_services::layer::LayerContent::Pixels(img) => img,
@@ -105,7 +91,7 @@ impl KaleidoEditor {
         tiled.to_packed().ok()
     }
 
-    fn apply_tool(&mut self, tool_name: &str, cx: &mut Context<Self>) {
+    pub fn apply_tool(&mut self, tool_name: &str, cx: &mut Context<Self>) {
         let params = self.tools_state.params.clone();
         if let Some(tool) = self.app.tool_registry().get(tool_name) {
             if let Some(mut image) = self.get_current_image() {
@@ -136,17 +122,17 @@ impl KaleidoEditor {
         }
     }
 
-    fn run_tool(&mut self, tool: &Arc<dyn Tool>, cx: &mut Context<Self>) {
+    pub fn run_tool(&mut self, tool: &Arc<dyn Tool>, cx: &mut Context<Self>) {
         let name = tool.name().to_string();
         self.tools_state.select(&name);
         self.tool_params.update(cx, |panel, cx| panel.set_tool(&name, cx));
         self.apply_tool(&name, cx);
     }
 
-    fn zoom_in(&mut self, cx: &mut Context<Self>) { self.canvas.update(cx, |canvas, cx| canvas.zoom_in(cx)); }
-    fn zoom_out(&mut self, cx: &mut Context<Self>) { self.canvas.update(cx, |canvas, cx| canvas.zoom_out(cx)); }
-    fn zoom_fit(&mut self, cx: &mut Context<Self>) { self.canvas.update(cx, |canvas, cx| canvas.zoom_fit(900.0, 600.0, cx)); }
-    fn zoom_reset(&mut self, cx: &mut Context<Self>) { self.canvas.update(cx, |canvas, cx| canvas.zoom_reset(cx)); }
+    pub fn zoom_in(&mut self, cx: &mut Context<Self>) { self.canvas.update(cx, |canvas, cx| canvas.zoom_in(cx)); }
+    pub fn zoom_out(&mut self, cx: &mut Context<Self>) { self.canvas.update(cx, |canvas, cx| canvas.zoom_out(cx)); }
+    pub fn zoom_fit(&mut self, cx: &mut Context<Self>) { self.canvas.update(cx, |canvas, cx| canvas.zoom_fit(900.0, 600.0, cx)); }
+    pub fn zoom_reset(&mut self, cx: &mut Context<Self>) { self.canvas.update(cx, |canvas, cx| canvas.zoom_reset(cx)); }
 }
 
 impl Render for KaleidoEditor {
@@ -195,7 +181,7 @@ impl Render for KaleidoEditor {
                         .text_color(rgb(color::TEXT_PRIMARY)).text_xs()
                         .on_click(cx.listener(|this, _, _window, cx| { this.zoom_reset(cx); cx.notify(); }))
                         .child("1:1"))
-                    .child().w(px(1.0)).h(px(24.0)).bg(rgb(color::BORDER))
+                    .w(px(1.0)).h(px(24.0)).bg(rgb(color::BORDER))
                     .children(tools.into_iter().map(|tool| {
                         let name = tool.name().to_string();
                         div().id(SharedString::from(name.clone())).px_3().py_1().rounded(px(4.0))
@@ -209,11 +195,11 @@ impl Render for KaleidoEditor {
                     .child(div().flex_1().h_full().child(self.canvas.clone()))
                     .child(div().w(px(220.0)).h_full().flex().flex_col()
                         .child(div().flex_1().child(self.layers.clone()))
-                        .child().h(px(1.0)).bg(rgb(color::BORDER))
+                        .h(px(1.0)).bg(rgb(color::BORDER))
                         .child(div().h(px(150.0)).child(self.history.clone()))))
             .child(
                 div().flex().items_center().h(px(24.0)).bg(rgb(color::BG_TOOLBAR)).px_4()
-                    .border_t(px(1.0), rgb(color::BORDER))
+                    .border_t(px(1.0))
                     .child(div().text_color(rgb(color::TEXT_DIM)).text_xs().child(status))
                     .flex_1()
                     .child(div().text_color(rgb(color::TEXT_DIM)).text_xs().child("Kaleido v0.1.0")))

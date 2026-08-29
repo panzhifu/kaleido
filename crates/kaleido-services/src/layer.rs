@@ -28,7 +28,7 @@ pub struct LayerId(pub u64);
 static NEXT_LAYER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl LayerId {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self(NEXT_LAYER_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
     }
 }
@@ -399,6 +399,7 @@ impl std::fmt::Debug for Layer {
 // ---------------------------------------------------------------------------
 
 /// Manages a stack of layers and composites them into a final image.
+#[derive(Debug)]
 pub struct LayerStack {
     /// Layers in z-order (index 0 = bottom).
     layers: Vec<Layer>,

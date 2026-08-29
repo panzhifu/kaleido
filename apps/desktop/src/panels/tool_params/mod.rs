@@ -41,7 +41,7 @@ impl Render for ToolParamsPanel {
             .flex()
             .flex_col()
             .child(div().p_3().text_color(rgb(color::TEXT_PRIMARY)).text_sm().child("工具参数"))
-            .child().h(px(1.0)).bg(rgb(color::BORDER))
+            .h(px(1.0)).bg(rgb(color::BORDER))
             .child(div().flex_1().p_3().text_color(rgb(color::TEXT_DIM)).text_xs().child("选择一个工具以调整参数"))
     }
 }

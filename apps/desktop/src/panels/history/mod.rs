@@ -25,7 +25,7 @@ impl HistoryPanel {
 
     pub fn add_entry(&mut self, name: String, description: String, cx: &mut Context<Self>) {
         if let Some(idx) = self.current_index { self.entries.truncate(idx + 1); } else { self.entries.clear(); }
-        self.entries.push(HistoryEntry { name, description });
+        self.entries.push(HistoryEntry { name: name.clone(), description: description.clone() });
         self.current_index = Some(self.entries.len() - 1);
         if self.entries.len() > 50 { self.entries.remove(0); self.current_index = Some(self.entries.len() - 1); }
         cx.emit(HistoryEvent::EntryAdded { name, description });
@@ -35,7 +35,7 @@ impl HistoryPanel {
         if let Some(idx) = self.current_index {
             if idx > 0 {
                 self.current_index = Some(idx - 1);
-                cx.emit(HistoryEvent::Undoned { name: self.entries[idx].name.clone() });
+                cx.emit(HistoryEvent::Undone { name: self.entries[idx].name.clone() });
             }
         }
     }
@@ -72,15 +72,15 @@ impl Render for HistoryPanel {
                     .child(div().flex().gap_2()
                         .child(div().id("undo").px_2().py_1().rounded(px(4.0)).bg(rgb(color::BG_TOOLBAR))
                             .text_color(rgb(color::TEXT_SECONDARY)).text_xs()
-                            .on_click(cx.listener(|this, _, cx| { this.undo(cx); }))
+                            .on_click(cx.listener(|this, _, _window, cx| { this.undo(cx); }))
                             .child("↩ 撤销"))
                         .child(div().id("redo").px_2().py_1().rounded(px(4.0)).bg(rgb(color::BG_TOOLBAR))
                             .text_color(rgb(color::TEXT_SECONDARY)).text_xs()
-                            .on_click(cx.listener(|this, _, cx| { this.redo(cx); }))
+                            .on_click(cx.listener(|this, _, _window, cx| { this.redo(cx); }))
                             .child("↪ 重做"))),
             )
-            .child().h(px(1.0)).bg(rgb(color::BORDER))
-            .child(div().flex_1().overflow_y_scroll().p_2().flex().flex_col().gap_1()
+            .h(px(1.0)).bg(rgb(color::BORDER))
+            .child(div().flex_1().p_2().flex().flex_col().gap_1()
                 .children(self.entries.iter().enumerate().map(|(i, entry)| {
                     let is_current = self.current_index == Some(i);
                     div().p_2().rounded(px(4.0))

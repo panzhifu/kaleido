@@ -41,7 +41,7 @@ impl Render for LayersPanel {
                     .child(div().text_color(rgb(color::TEXT_PRIMARY)).text_sm().child("图层"))
                     .child(div().text_color(rgb(color::TEXT_DIM)).text_xs().child("0 层")),
             )
-            .child().h(px(1.0)).bg(rgb(color::BORDER))
+            .h(px(1.0)).bg(rgb(color::BORDER))
             .child(div().flex_1().p_3().text_color(rgb(color::TEXT_DIM)).text_xs().child("暂无图层"))
             .child(
                 div().p_2().flex().gap_2()
@@ -49,7 +49,7 @@ impl Render for LayersPanel {
                         div().id("add_layer").flex_1().px_3().py_1().rounded(px(4.0))
                             .bg(rgb(color::ACCENT)).text_color(rgb(color::TEXT_PRIMARY))
                             .text_xs().text_center()
-                            .on_click(cx.listener(|this, _, cx| { this.add_layer(cx); }))
+                            .on_click(cx.listener(|this, _, _window, cx| { this.add_layer(cx); }))
                             .child("+ 添加图层"),
                     ),
             )
