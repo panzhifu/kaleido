@@ -173,11 +173,11 @@ impl Render for KaleidoEditor {
                             }).detach();
                         }))
                         .child("📂 打开"))
-                    .child().flex_1()
+                    .flex_1()
                     .child(div().text_color(rgb(color::TEXT_DIM)).text_xs().child("Kaleido — AI 原生图像工作站")))
             .child(
                 div().flex().items_center().h(px(40.0)).bg(rgb(color::BG_TOOLBAR)).px_4().gap_1()
-                    .border_b(px(1.0), rgb(color::BORDER))
+                    .border_b(px(1.0))
                     .child(div().id("zoom_out").px_2().py_1().rounded(px(4.0)).bg(rgb(color::BG_PANEL))
                         .text_color(rgb(color::TEXT_PRIMARY)).text_xs()
                         .on_click(cx.listener(|this, _, _window, cx| { this.zoom_out(cx); cx.notify(); }))
@@ -215,7 +215,7 @@ impl Render for KaleidoEditor {
                 div().flex().items_center().h(px(24.0)).bg(rgb(color::BG_TOOLBAR)).px_4()
                     .border_t(px(1.0), rgb(color::BORDER))
                     .child(div().text_color(rgb(color::TEXT_DIM)).text_xs().child(status))
-                    .child().flex_1()
+                    .flex_1()
                     .child(div().text_color(rgb(color::TEXT_DIM)).text_xs().child("Kaleido v0.1.0")))
     }
 }
