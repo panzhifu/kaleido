@@ -8,7 +8,9 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 
 ### 核心库（`kaleido-core`）
 - `Image` 使用 `Arc<Vec<u8>>` 实现零拷贝克隆与写时复制（COW）
+- `TiledImage` 128×128 分块存储：稀疏分配、tile 级并行、脏 tile 追踪
 - 5 种像素格式（RGBA8 / RGB8 / Gray8 / GrayA8 / RGBA16）
+- **SIMD 格式转换**：RGBA↔Gray、RGBA↔RGB、RGBA↔GrayA，6 条路径全部 SIMD 加速（`wide` crate，8 像素/次）
 - 零拷贝子视图、裁剪、带重叠保护的区域复制、格式转换
 - SIMD 友好的行对齐、RGBA16 全精度映射
 
@@ -17,7 +19,16 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 - **FileCodec** — JPEG / PNG / WebP / TIFF 读写，BMP / GIF 只读
 - **FileCodecRegistry** — 按格式的编解码插件系统（`FormatCodec` trait），作为 **Cordis 服务**暴露；第三方插件可通过依赖注入在运行时注册新格式（如 AVIF）
 - **HistoryKeeper** — 基于有界快照命令的撤销/重做（默认 50 步）
+- **TileHistoryKeeper** — **脏 tile 撤销**：只存储修改的 tile，内存 ∝ 修改区域（非全图）
 - **ToolRegistry** — 插件提供的工具动态注册表
+- **Op Graph** — 类 GEGL 的操作图：DAG 结构、拓扑排序、ROI 驱动懒求值
+- **GraphExecutor** — Tile 级并行执行（rayon）、相邻 point-op 自动融合
+- **CanvasService** — GPU 显示服务：视口管理（zoom/pan/rotate）、可见 tile 计算
+- **ProgressiveRenderer** — 渐进渲染：Low → Medium → High 质量
+- **AsyncImageLoader** — tokio 异步加载：渐进预览（512px → 全分辨率）、三种优先级策略
+- **BackgroundSaver** — 后台保存不阻塞 UI
+- **LayerStack** — 图层系统：像素层 + 调整层（非破坏性）、12 种混合模式
+- **BlendMode SIMD** — 8 种混合模式 SIMD 优化（Normal/Multiply/Screen/Overlay/Darken/Lighten/Difference/Exclusion）
 - 类型化事件系统统一在 Cordis 之上（14 种事件名 + 类型化 payload，订阅随生命周期自动清理）
 
 ### 应用层
@@ -39,21 +50,41 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 ## 架构
 
 ```
-                    ┌────────────────────────────────────────┐
-                    │  宿主（CLI / GPUI 桌面端）               │
-                    │  窗口 · 画布 · 服务容器                 │
-                    └───────────────┬────────────────────────┘
-                                    │
-                          ToolRegistry（Cordis 服务）
-                    ┌───────────────┼───────────────┐
-                    ↓               ↓               ↓
-             Tool 插件          核心服务        未来：WASM 插件
-        （brightness, invert） ImageStore · FileCodec
-                              HistoryKeeper · ToolRegistry
+┌──────────────────────────────────────────────────────────────────┐
+│                        宿主（CLI / GPUI 桌面端）                  │
+│                                                                   │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────────┐ │
+│  │ AI Agent    │  │ Canvas       │  │ Tool Registry           │ │
+│  │ Service     │  │ Service      │  │ (Cordis 服务)            │ │
+│  │ (LLM 规划)   │  │ (GPU 显示)   │  │ ← WASM / 原生 / AI 工具 │ │
+│  └──────┬──────┘  └──────┬───────┘  └─────────────────────────┘ │
+│         │                │                                        │
+│         ▼                ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    Op Graph Executor                         │ │
+│  │   [原图] → [brightness] → [blur] → [sharpen] → [输出]       │ │
+│  │   ROI 驱动 │ 自动合并 point-op │ 并行 tile 处理             │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                          │                                        │
+│                          ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    Tile Store (TiledImage)                   │ │
+│  │   HashMap<TileCoord, Arc<Tile>>                             │ │
+│  │   128×128 tiles │ LRU 脏 tile 缓存 │ 撤销只存脏 tile 旧版本  │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                          │                                        │
+│                          ▼                                        │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────────┐ │
+│  │ FileCodec   │  │ pixel_convert│  │ HistoryKeeper           │ │
+│  │ Registry    │  │ (SIMD)       │  │ (脏 tile 快照)           │ │
+│  └─────────────┘  └──────────────┘  └─────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 - **核心服务不是插件** —— 它们是宿主基础设施，插件通过 `Inject` 依赖它们。
 - **工具才是插件** —— 每个菜单命令都来自注册表，宿主从不硬编码。
+- **Op Graph 统一处理引擎** —— 自动融合相邻 point-op，ROI 驱动只计算可见区域。
+- **Tile 级并行** —— rayon 多核处理不同 tile，SIMD 加速 tile 内像素操作。
 - 所有事件经由 Cordis 分发（`Context::emit` / `Context::on`）；插件 fiber 销毁时订阅自动移除。
 
 ## 快速开始
@@ -123,9 +154,10 @@ pub fn invert_tool_plugin() -> PluginHandle {
 
 ```
 crates/
-  kaleido-core/       图像数据模型（像素缓冲、格式、几何操作）
-  kaleido-traits/     契约：FileCodec、ImageStore、HistoryKeeper、Tool、事件
+  kaleido-core/       图像数据模型（Image、TiledImage、SIMD 格式转换）
+  kaleido-traits/     契约：FileCodec、ImageStore、HistoryKeeper、Tool、AIAgent、事件
   kaleido-services/   实现 + Cordis 插件 + 应用容器（KaleidoApp）
+                      （Op Graph、Canvas、Async I/O、Layer、Tile History、Blend SIMD）
   kaleido-sdk/        插件 SDK：ToolPlugin builder + define_tool! 宏
   kaleido-plugin-host/插件宿主：manifest/loader/manager + wasmtime 运行时 + AIToolGenerator
 apps/
@@ -135,13 +167,21 @@ plugins/examples/
   brightness/         亮度工具插件（带参数 schema）
   invert/             反相工具插件
 wit/                  WASM 接口定义（tool、lifecycle、host functions）
+docs/                架构文档（architecture.md）
 tests/                集成测试夹具（占位）
 ```
 
 ## 路线图
 
-- [x] 核心图像库
+### 已完成
+- [x] 核心图像库（Image + TiledImage + SIMD 格式转换）
 - [x] 服务层（存储 / 编解码 / 历史 / 事件）基于 Cordis
+- [x] **Op Graph 执行引擎**（DAG、ROI 驱动、tile 并行、point-op 融合）
+- [x] **GPU Canvas 服务**（视口管理、渐进渲染）
+- [x] **异步 I/O**（AsyncImageLoader + BackgroundSaver）
+- [x] **脏 tile 撤销**（TileHistoryKeeper，内存 ∝ 修改区域）
+- [x] **图层系统**（LayerStack + 12 种混合模式）
+- [x] **SIMD 混合模式**（8 种模式，8 像素/次）
 - [x] Tool 插件契约 + 示例插件（原生、进程内）
 - [x] 工具参数 schema（自动生成 UI 表单）
 - [x] 文件格式编解码插件系统
@@ -150,9 +190,13 @@ tests/                集成测试夹具（占位）
 - [x] WIT 接口定义（WASM 边界）
 - [x] WASM 运行时（wasmtime）— 加载编译好的 `.wasm` 工具插件
 - [x] GPUI 桌面宿主 + 动态插件工具栏
+
+### 待做
 - [ ] 示例 WASM 工具插件（把工具编译成 `.wasm` 并加载）
 - [ ] AI 生成工具端到端（生成 → 编译 → 加载 → `tool_upgraded`）
 - [ ] 插件 UI 面板
+- [ ] 高级混合模式（Color Dodge/Burn、Soft Light 等 SIMD 优化）
+- [ ] 蒙版系统完善
 
 ## 许可证
 

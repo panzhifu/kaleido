@@ -10,7 +10,9 @@ Kaleido is an image editor under construction. Its architecture is deliberately 
 
 ### Core library (`kaleido-core`)
 - `Image` with zero-copy `Arc<Vec<u8>>` cloning and copy-on-write
+- `TiledImage` 128×128 tile-based storage: sparse allocation, tile-parallel processing, dirty tile tracking
 - 5 pixel formats (RGBA8 / RGB8 / Gray8 / GrayA8 / RGBA16)
+- **SIMD pixel conversion**: RGBA↔Gray, RGBA↔RGB, RGBA↔GrayA, 6 paths all SIMD-accelerated (`wide` crate, 8 pixels/iteration)
 - Zero-copy sub-views, crop, region copy with overlap protection, format conversion
 - SIMD-friendly aligned row strides, full-precision RGBA16 mapping
 
@@ -19,7 +21,16 @@ Kaleido is an image editor under construction. Its architecture is deliberately 
 - **FileCodec** — JPEG / PNG / WebP / TIFF read+write, BMP / GIF read-only
 - **FileCodecRegistry** — per-format codec plugin system (`FormatCodec` trait) exposed as a **Cordis service**; third-party plugins can register new formats (e.g. AVIF) at runtime via dependency injection
 - **HistoryKeeper** — undo / redo with bounded snapshot-based commands (default 50 steps)
+- **TileHistoryKeeper** — **dirty-tile undo**: stores only modified tiles, memory ∝ modified region (not full image)
 - **ToolRegistry** — dynamic registry of tools provided by plugins
+- **Op Graph** — GEGL-like operation graph: DAG structure, topological sort, ROI-driven lazy evaluation
+- **GraphExecutor** — Tile-parallel execution (rayon), automatic point-op fusion
+- **CanvasService** — GPU display service: viewport management (zoom/pan/rotate), visible tile calculation
+- **ProgressiveRenderer** — Progressive rendering: Low → Medium → High quality
+- **AsyncImageLoader** — tokio async loading: progressive preview (512px → full res), 3 priority strategies
+- **BackgroundSaver** — Background save without blocking UI
+- **LayerStack** — Layer system: pixel layers + adjustment layers (non-destructive), 12 blend modes
+- **BlendMode SIMD** — 8 blend modes SIMD-optimized (Normal/Multiply/Screen/Overlay/Darken/Lighten/Difference/Exclusion)
 - Typed event system unified on Cordis (14 event names + typed payloads, lifecycle-managed subscriptions)
 
 ### Plugin contracts
@@ -144,8 +155,15 @@ tests/                Integration test fixtures (placeholder)
 
 ## Roadmap
 
-- [x] Core image library
+### Completed
+- [x] Core image library (Image + TiledImage + SIMD pixel conversion)
 - [x] Service layer (store / codec / history / events) on Cordis
+- [x] **Op Graph execution engine** (DAG, ROI-driven, tile-parallel, point-op fusion)
+- [x] **GPU Canvas service** (viewport management, progressive rendering)
+- [x] **Async I/O** (AsyncImageLoader + BackgroundSaver)
+- [x] **Dirty-tile undo** (TileHistoryKeeper, memory ∝ modified region)
+- [x] **Layer system** (LayerStack + 12 blend modes)
+- [x] **SIMD blend modes** (8 modes, 8 pixels/iteration)
 - [x] Tool plugin contract + example plugins (native, in-process)
 - [x] Tool parameter schemas (auto-generated UI forms)
 - [x] File format codec plugin system
@@ -154,9 +172,13 @@ tests/                Integration test fixtures (placeholder)
 - [x] WIT interface definitions for the WASM boundary
 - [x] WASM runtime (`wasmtime`) — load compiled `.wasm` tool plugins
 - [x] GPUI desktop host with dynamic plugin toolbar
+
+### TODO
 - [ ] Example WASM tool plugin (compile a tool to `.wasm` and load it)
 - [ ] AI-generated tools end-to-end (generate → compile → load → `tool_upgraded`)
 - [ ] Plugin UI panels
+- [ ] Advanced blend modes (Color Dodge/Burn, Soft Light SIMD optimization)
+- [ ] Mask system improvements
 
 ## License
 
