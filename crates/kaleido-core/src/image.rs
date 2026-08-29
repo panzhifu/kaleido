@@ -529,7 +529,7 @@ impl Image {
         let data = Arc::make_mut(&mut self.data);
 
         for y in 0..self.height {
-            let row_start = self.offset as usize + y as usize * self.row_stride as usize;
+            let row_start = self.offset + y as usize * self.row_stride as usize;
             for x in 0..self.width {
                 let off = row_start + x as usize * bpp;
                 write_pixel(&mut data[off..off + bpp], self.format, pixel);
@@ -556,7 +556,7 @@ impl Image {
         let mut pixels_filled: u64 = 0;
 
         for row in start_y..max_y {
-            let row_start = self.offset as usize
+            let row_start = self.offset
                 + row as usize * self.row_stride as usize
                 + start_x as usize * bpp;
             for col in start_x..max_x {
@@ -586,7 +586,7 @@ impl Image {
         let data = Arc::make_mut(&mut self.data);
         for y in 0..self.height {
             let src_start = y as usize * self.width as usize * bpp;
-            let dst_start = self.offset as usize + y as usize * self.row_stride as usize;
+            let dst_start = self.offset + y as usize * self.row_stride as usize;
             let row_bytes = self.width as usize * bpp;
             data[dst_start..dst_start + row_bytes]
                 .copy_from_slice(&buffer[src_start..src_start + row_bytes]);
@@ -608,7 +608,7 @@ impl Image {
 
         for y in 0..self.height {
             let dst_start = y as usize * self.width as usize * bpp;
-            let src_start = self.offset as usize + y as usize * self.row_stride as usize;
+            let src_start = self.offset + y as usize * self.row_stride as usize;
             let row_bytes = self.width as usize * bpp;
             buffer[dst_start..dst_start + row_bytes]
                 .copy_from_slice(&self.data[src_start..src_start + row_bytes]);
@@ -639,7 +639,7 @@ impl Image {
             // Slow path: copy row by row to handle stride.
             let mut result = Vec::with_capacity(pixel_count * bpp);
             for y in 0..self.height {
-                let row_start = self.offset as usize + y as usize * self.row_stride as usize;
+                let row_start = self.offset + y as usize * self.row_stride as usize;
                 result.extend_from_slice(
                     &self.data[row_start..row_start + self.width as usize * bpp],
                 );
@@ -683,7 +683,6 @@ impl Image {
     ///
     /// The returned image shares the same underlying data buffer.  No pixel
     /// data is copied — only the `Arc` reference count is incremented.
-    #[must_use]
     pub fn sub_view(&self, x: u32, y: u32, width: u32, height: u32) -> ImageResult<Self> {
         if x + width > self.width || y + height > self.height {
             return Err(ImageError::OutOfBounds {
@@ -709,7 +708,6 @@ impl Image {
     }
 
     /// Creates a cropped copy of the image (allocates a new buffer).
-    #[must_use]
     pub fn crop(&self, x: u32, y: u32, width: u32, height: u32) -> ImageResult<Self> {
         let view = self.sub_view(x, y, width, height)?;
         Ok(view.to_packed())
@@ -764,7 +762,7 @@ impl Image {
             // Overlap case: copy source region to a temporary buffer first.
             let mut temp = vec![0u8; copy_width as usize * copy_height as usize * bpp];
             for row in 0..copy_height {
-                let src_off = src.offset as usize
+                let src_off = src.offset
                     + (src_y + row) as usize * src.row_stride as usize
                     + src_x as usize * bpp;
                 let tmp_off = row as usize * copy_width as usize * bpp;
@@ -774,7 +772,7 @@ impl Image {
             // Copy from temp to destination.
             for row in 0..copy_height {
                 let tmp_off = row as usize * copy_width as usize * bpp;
-                let dst_off = self.offset as usize
+                let dst_off = self.offset
                     + (dst_y + row) as usize * self.row_stride as usize
                     + dst_x as usize * bpp;
                 let bytes = copy_width as usize * bpp;
@@ -784,10 +782,10 @@ impl Image {
         } else {
             // No overlap: copy directly.
             for row in 0..copy_height {
-                let src_off = src.offset as usize
+                let src_off = src.offset
                     + (src_y + row) as usize * src.row_stride as usize
                     + src_x as usize * bpp;
-                let dst_off = self.offset as usize
+                let dst_off = self.offset
                     + (dst_y + row) as usize * self.row_stride as usize
                     + dst_x as usize * bpp;
                 let bytes = copy_width as usize * bpp;
@@ -800,7 +798,6 @@ impl Image {
     }
 
     /// Converts the image to a different pixel format.
-    #[must_use]
     pub fn convert(&self, target: PixelFormat) -> ImageResult<Self> {
         if self.format == target {
             return Ok(self.clone());

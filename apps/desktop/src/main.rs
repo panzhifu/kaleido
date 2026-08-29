@@ -5,11 +5,11 @@ use gpui::{
 };
 use gpui::prelude::*;
 use gpui_platform::application;
-use kaleido_core::{Image, ImageResult, PixelFormat, TiledImage};
+use kaleido_core::{Image, TiledImage};
 use kaleido_services::app::{AppConfig, KaleidoApp};
-use kaleido_services::async_io::{AsyncImageLoader, BackgroundSaver, LoadPriority, LoadState};
-use kaleido_services::canvas::{CanvasService, ProgressiveRenderer, RenderQuality, Viewport};
-use kaleido_services::layer::{BlendMode, Layer, LayerStack};
+use kaleido_services::async_io::{AsyncImageLoader, BackgroundSaver, LoadPriority};
+use kaleido_services::canvas::CanvasService;
+use kaleido_services::layer::LayerStack;
 use kaleido_tool_brightness::{BrightnessToolConfig, brightness_tool_plugin};
 use kaleido_tool_invert::invert_tool_plugin;
 use kaleido_traits::Tool;
@@ -103,14 +103,7 @@ impl KaleidoEditor {
 
     /// Updates the current layer with a new image.
     fn update_current_layer(&mut self, image: Image) {
-        let tiled = TiledImage::from_packed(&image).ok();
-        if let Some(tiled) = tiled {
-            if let Some(bg) = self.layers.background() {
-                // Update existing background layer.
-                // Note: We can't mutate through background() since it returns &Layer.
-                // For now, we'll replace the entire layer stack.
-            }
-            // Create a new layer stack with the updated image.
+        if let Ok(tiled) = TiledImage::from_packed(&image) {
             self.layers = LayerStack::with_background(image.width(), image.height(), tiled);
             self.canvas.set_image_size(image.width(), image.height());
         }
