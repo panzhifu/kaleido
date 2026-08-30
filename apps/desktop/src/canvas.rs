@@ -19,7 +19,8 @@ use smallvec::SmallVec;
 use kaleido_core::{PixelFormat, TiledImage};
 use kaleido_services::InteractiveToolRunner;
 use kaleido_traits::{
-    HistoryKeeper, ImageStore, InteractiveTool, Modifiers, PointerButtons, PointerEvent, PointerKind,
+    HistoryKeeper, ImageStore, InteractiveTool, KeyCode, KeyEvent, KeyModifiers, Modifiers,
+    PointerButtons, PointerEvent, PointerKind,
 };
 
 // Layout constants matching the shell layout in `app.rs`. They are needed
@@ -63,13 +64,24 @@ impl Canvas {
     }
 
     /// Sets the interactive tool that receives pointer events.
+    ///
+    /// Calls `on_deactivate` on the previous tool (if any) and
+    /// `on_activate` on the new tool.
     pub fn set_tool(&mut self, tool: Arc<dyn InteractiveTool>) {
+        // Deactivate the previous tool.
+        if let Some(old) = self.tool.take() {
+            self.runner.borrow().deactivate(old.as_ref());
+        }
+        // Activate the new tool.
+        self.runner.borrow().activate(tool.as_ref());
         self.tool = Some(tool);
     }
 
     /// Clears the active interactive tool.
     pub fn clear_tool(&mut self) {
-        self.tool = None;
+        if let Some(old) = self.tool.take() {
+            self.runner.borrow().deactivate(old.as_ref());
+        }
     }
 
     #[allow(dead_code)]
@@ -198,6 +210,83 @@ fn dispatch_pointer(
     window.refresh();
 }
 
+/// Converts a GPUI keystroke into our `KeyCode`.
+fn gpui_key_to_keycode(key: &str, key_char: &Option<String>) -> KeyCode {
+    // Prefer key_char for printable characters (handles shift, IME).
+    if let Some(ch) = key_char {
+        if ch.len() == 1 {
+            return KeyCode::Char(ch.chars().next().unwrap().to_ascii_lowercase());
+        }
+    }
+    // Fall back to the physical key name.
+    match key {
+        "escape" => KeyCode::Escape,
+        "enter" | "return" => KeyCode::Enter,
+        "backspace" | "delete" => KeyCode::Backspace,
+        "tab" => KeyCode::Tab,
+        "space" => KeyCode::Space,
+        "arrow-up" => KeyCode::ArrowUp,
+        "arrow-down" => KeyCode::ArrowDown,
+        "arrow-left" => KeyCode::ArrowLeft,
+        "arrow-right" => KeyCode::ArrowRight,
+        "[" => KeyCode::LeftBracket,
+        "]" => KeyCode::RightBracket,
+        "=" | "plus" => KeyCode::Plus,
+        "-" | "underscore" => KeyCode::Minus,
+        _ => {
+            // Single ASCII character.
+            if key.len() == 1 {
+                let c = key.chars().next().unwrap();
+                if c.is_ascii_alphabetic() || c.is_ascii_digit() {
+                    KeyCode::Char(c.to_ascii_lowercase())
+                } else {
+                    KeyCode::Unknown
+                }
+            } else {
+                KeyCode::Unknown
+            }
+        }
+    }
+}
+
+/// Converts GPUI modifiers to our `KeyModifiers`.
+fn gpui_modifiers_to_keymodifiers(m: &gpui::Modifiers) -> KeyModifiers {
+    let mut out = KeyModifiers::new(0);
+    if m.shift {
+        out.insert(KeyModifiers::SHIFT);
+    }
+    if m.control {
+        out.insert(KeyModifiers::CTRL);
+    }
+    if m.alt {
+        out.insert(KeyModifiers::ALT);
+    }
+    if m.platform {
+        out.insert(KeyModifiers::COMMAND);
+    }
+    out
+}
+
+/// Dispatches a keyboard event to the active tool.
+fn dispatch_keyboard(
+    runner: &Rc<RefCell<InteractiveToolRunner>>,
+    tool: &Option<Arc<dyn InteractiveTool>>,
+    key_event: &KeyEvent,
+    is_down: bool,
+) {
+    let Some(tool) = tool.as_ref() else {
+        return;
+    };
+    let Ok(runner) = runner.try_borrow() else {
+        return;
+    };
+    if is_down {
+        let _ = runner.key_down(tool.as_ref(), key_event);
+    } else {
+        let _ = runner.key_up(tool.as_ref(), key_event);
+    }
+}
+
 impl Render for Canvas {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         // Cheap clone: TiledImage shares tile buffers via Arc.
@@ -208,6 +297,27 @@ impl Render for Canvas {
 
         let runner = self.runner.clone();
         let tool = self.tool.clone();
+
+        // Keyboard events: convert GPUI keystrokes to our KeyEvent and
+        // dispatch to the active tool. We use on_key_event (Window-level)
+        // so we capture keys that aren't bound to global actions.
+        let (key_runner, key_tool) = (runner.clone(), tool.clone());
+        _window.on_key_event(move |event: &gpui::KeyDownEvent, _phase, _window, _cx| {
+            let ke = &event.keystroke;
+            let code = gpui_key_to_keycode(&ke.key, &ke.key_char);
+            let modifiers = gpui_modifiers_to_keymodifiers(&ke.modifiers);
+            let key_event = KeyEvent::new(code, modifiers);
+            dispatch_keyboard(&key_runner, &key_tool, &key_event, true);
+        });
+
+        let (key_up_runner, key_up_tool) = (runner.clone(), tool.clone());
+        _window.on_key_event(move |event: &gpui::KeyUpEvent, _phase, _window, _cx| {
+            let ke = &event.keystroke;
+            let code = gpui_key_to_keycode(&ke.key, &ke.key_char);
+            let modifiers = gpui_modifiers_to_keymodifiers(&ke.modifiers);
+            let key_event = KeyEvent::new(code, modifiers);
+            dispatch_keyboard(&key_up_runner, &key_up_tool, &key_event, false);
+        });
 
         div()
             .id("canvas-surface")

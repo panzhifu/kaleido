@@ -40,11 +40,20 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 
 ### 插件体系
 - `Tool` 契约（`kaleido-traits`）— 插件实现 `name` / `menu_path` / `description` / `apply`
+- `Tool` 元数据 — `icon()` 工具栏图标、`category()` 功能分类（11 类：选择/变换/绘画/调色/修饰/填充/矢量/文字/分析/导航/其他）、`is_enabled()` 上下文可用性、`cursor()` 光标外观（18 种光标）
 - `InteractiveTool` 契约 — 指针驱动工具实现 `on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`
+- `InteractiveTool` 键盘 — `on_key_down()` / `on_key_up()` 接收 `KeyEvent` / `KeyCode` / `KeyModifiers`；`on_escape()` 取消描边；`is_stroke_active()` 查询描边状态
+- `InteractiveTool` 生命周期 — `on_activate()` / `on_deactivate()` 工具切换时的状态管理
+- `SelectionTool` 契约 — 生成 `Selection`（像素遮罩）而非修改像素；`on_begin()` / `on_update()` / `on_end()` + `SelectionMode`（替换/相加/相减/相交）
+- `Panel` 契约 — 插件通过 12 种元素类型（标签/标题/数字输入/复选框/下拉/颜色选择器/按钮行/画布/进度条/分区）在宿主侧面板渲染自定义 UI；`on_change()` / `on_button()` 处理交互
+- `AnalysisTool` 契约 — 只读工具（直方图、颜色拾取器、测量）；`analyze()` 返回 JSON 结果
+- `SelectionState` — 共享选区状态，`contains()` / `bounds()` / `invert()`；平坦 `Vec<bool>` 遮罩实现 O(1) 像素检测
+- **选区约束渲染** — `apply_to_selection()` 仅处理与选区相交的 tile（10000×10000 图像中 500×500 选区：6100 tile → 16 tile）
 - **参数 schema**（`ParamType` / `ParamSchema` / `ToolSchema`）— 自动生成 UI 表单、参数校验与默认值
 - **WIT 接口**（`wit/kaleido.wit`）— WASM 边界：`tool`、`plugin-lifecycle`、`host-functions` 接口 + `world kaleido-plugin`
 - **插件宿主**（`kaleido-plugin-host`）— `PluginManifest`、`Plugin`/`PluginLoader` trait、`PluginManager`、`AIToolGenerator`（动态生成工具）
 - **WASM 运行时** — 编译好的 `.wasm` 插件通过 **wasmtime** 加载执行：`WasmPluginManager` 扫描插件目录、实例化模块（C ABI：`plugin_init` / `tool_apply` 等）、把所有工具注册进注册表；宿主函数（`host_log`、`host_emit_event`）已链接
+- **WASM 选区优化** — 设置选区时仅交换选区包围盒区域（非全图），局部操作数据传输量降低 99%+
 - **插件 SDK**（`kaleido-sdk`）— `ToolPlugin<T>` builder + `define_tool!` 宏
 - **AI 工具生成** — `KaleidoApp::create_ai_tool(描述, 执行函数)` 从 JSON 描述注册工具并发出 `tool_upgraded` 事件
 - Cordis 服务插件：依赖注入（`Inject`）+ fiber 生命周期管理
@@ -202,9 +211,10 @@ tests/                集成测试夹具（占位）
 ### 待做
 - [ ] 示例 WASM 工具插件（把工具编译成 `.wasm` 并加载）
 - [ ] AI 生成工具端到端（生成 → 编译 → 加载 → `tool_upgraded`）
-- [ ] 插件 UI 面板
 - [ ] 高级混合模式（Hard Light 等 SIMD 优化）
 - [ ] 蒙版系统增强（羽化、矢量蒙版等）
+- [ ] 选区叠加渲染（marching ants 动画）
+- [ ] 笔刷引擎预设（纹理、动态、混合）
 
 ## 许可证
 

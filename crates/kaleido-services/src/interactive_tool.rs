@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use kaleido_core::{ImageError, ImageResult, TileCoord, TiledImage};
-use kaleido_traits::{HistoryKeeper, ImageStore, InteractiveTool, PointerEvent, ToolContext};
+use kaleido_traits::{HistoryKeeper, ImageStore, InteractiveTool, KeyEvent, PointerEvent, ToolContext};
 
 use crate::tile_history::TileSnapshotCommand;
 
@@ -201,6 +201,71 @@ impl InteractiveToolRunner {
         stroke.command.apply_before(&mut stroke.image)?;
         self.store.set_image(stroke.image.clone())?;
         Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Keyboard
+    // -----------------------------------------------------------------------
+
+    /// Dispatches a key-down event to the active tool.
+    ///
+    /// The tool may use shortcuts (brush size, constraints, etc.).
+    /// Returns an error if the tool's handler fails.
+    pub fn key_down(
+        &self,
+        tool: &dyn InteractiveTool,
+        event: &KeyEvent,
+    ) -> ImageResult<()> {
+        tool.on_key_down(event)
+    }
+
+    /// Dispatches a key-up event to the active tool.
+    pub fn key_up(&self, tool: &dyn InteractiveTool, event: &KeyEvent) -> ImageResult<()> {
+        tool.on_key_up(event)
+    }
+
+    // -----------------------------------------------------------------------
+    // Tool lifecycle
+    // -----------------------------------------------------------------------
+
+    /// Notifies the tool it has been activated (selected).
+    pub fn activate(&self, tool: &dyn InteractiveTool) {
+        tool.on_activate();
+    }
+
+    /// Notifies the tool it has been deactivated (deselected).
+    pub fn deactivate(&self, tool: &dyn InteractiveTool) {
+        tool.on_deactivate();
+    }
+
+    // -----------------------------------------------------------------------
+    // Escape
+    // -----------------------------------------------------------------------
+
+    /// Handles the Escape key.
+    ///
+    /// If the tool's `on_escape` returns `true`, the event was handled.
+    /// If a stroke is active, cancels it. Returns whether a stroke was
+    /// cancelled.
+    pub fn handle_escape(&mut self, tool: &dyn InteractiveTool) -> ImageResult<bool> {
+        let handled = tool.on_escape();
+        if self.active.is_some() {
+            self.cancel_stroke()?;
+            return Ok(true);
+        }
+        Ok(handled)
+    }
+
+    // -----------------------------------------------------------------------
+    // Stroke query
+    // -----------------------------------------------------------------------
+
+    /// Returns `true` when the active tool reports a stroke is in progress.
+    ///
+    /// Combines the runner's own state with the tool's report so tools
+    /// that maintain their own stroke state are accurately reflected.
+    pub fn is_tool_stroke_active(&self, tool: &dyn InteractiveTool) -> bool {
+        self.active.is_some() || tool.is_stroke_active()
     }
 }
 

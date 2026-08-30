@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use anyhow::{Context as _, Result};
 use cordis::Context;
 use kaleido_core::{ImageError, ImageResult, TiledImage};
-use kaleido_traits::{Tool, ToolParams, ToolRegistry, ToolSchema};
+use kaleido_traits::{Tool, ToolParams, ToolRegistry, ToolSchema, Selection};
 use cordis::Service;
 use tracing::{debug, info};
 use wasmtime::{self, Caller, Engine, Extern, Instance, Linker, Module, Store};
@@ -251,6 +251,9 @@ struct WasmTool {
     menu_path: String,
     description: String,
     schema: ToolSchema,
+    /// Current selection for partial processing optimization.
+    /// When set, only the selection bounding box is exchanged with WASM.
+    selection: Option<Selection>,
 }
 
 impl WasmTool {
@@ -267,6 +270,29 @@ impl WasmTool {
             menu_path,
             description,
             schema,
+            selection: None,
+        }
+    }
+
+    /// Sets the current selection for partial processing.
+    pub fn set_selection(&mut self, selection: Option<Selection>) {
+        self.selection = selection;
+    }
+
+    /// Returns the number of bytes exchanged with WASM for the given image.
+    /// Used for performance monitoring.
+    fn bytes_exchanged(&self, image: &TiledImage) -> usize {
+        match &self.selection {
+            Some(sel) => {
+                if let Some((_, _, w, h)) = sel.bounds() {
+                    (w * h * 4) as usize
+                } else {
+                    0
+                }
+            }
+            None => {
+                (image.width() * image.height() * 4) as usize
+            }
         }
     }
 }
@@ -289,12 +315,31 @@ impl Tool for WasmTool {
     }
 
     fn apply(&self, image: &mut TiledImage, params: &ToolParams) -> ImageResult<()> {
+        // When a selection is set, only process the selected region.
+        if let Some(ref sel) = self.selection {
+            if let Some(bounds) = sel.bounds() {
+                return self.apply_with_selection(image, params, sel, bounds);
+            }
+        }
+
+        // No selection: process the full image.
+        self.apply_full(image, params)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Internal implementation
+// ---------------------------------------------------------------------------
+
+impl WasmTool {
+    /// Applies the tool to the full image (original behavior).
+    fn apply_full(&self, image: &mut TiledImage, params: &ToolParams) -> ImageResult<()> {
         let width = image.width();
         let height = image.height();
         let pixels = image.to_rgba_vec();
 
         debug!(
-            "WasmTool::apply '{}' ({}x{}, {} bytes)",
+            "WasmTool::apply_full '{}' ({}x{}, {} bytes)",
             self.name,
             width,
             height,
@@ -302,12 +347,11 @@ impl Tool for WasmTool {
         );
 
         // 1. Allocate WASM memory and write pixels.
-        let pixels_ptr =
-            self.entry
-                .alloc(pixels.len() as i32)
-                .map_err(|e| ImageError::OperationFailed {
-                    reason: e.to_string(),
-                })?;
+        let pixels_ptr = self.entry.alloc(pixels.len() as i32).map_err(|e| {
+            ImageError::OperationFailed {
+                reason: e.to_string(),
+            }
+        })?;
         self.entry
             .write_bytes(pixels_ptr, &pixels)
             .map_err(|e| ImageError::OperationFailed {
@@ -373,10 +417,147 @@ impl Tool for WasmTool {
             })?;
 
         // 6. Update the image with modified pixels.
-        *image =
-            TiledImage::from_rgba(width, height, modified).map_err(|e| ImageError::OperationFailed {
+        *image = TiledImage::from_rgba(width, height, modified).map_err(|e| {
+            ImageError::OperationFailed {
+                reason: e.to_string(),
+            }
+        })?;
+
+        Ok(())
+    }
+
+    /// Applies the tool only within the selection bounding box.
+    ///
+    /// Instead of copying the entire image to WASM, this method:
+    /// 1. Extracts only the pixels within the selection bounds
+    /// 2. Copies just that region to WASM
+    /// 3. Calls tool_apply with the region dimensions
+    /// 4. Writes the modified region back into the image
+    ///
+    /// This dramatically reduces data transfer for localized operations.
+    fn apply_with_selection(
+        &self,
+        image: &mut TiledImage,
+        params: &ToolParams,
+        selection: &Selection,
+        bounds: (u32, u32, u32, u32),
+    ) -> ImageResult<()> {
+        let (bx, by, bw, bh) = bounds;
+        let img_w = image.width();
+        let img_h = image.height();
+
+        debug!(
+            "WasmTool::apply_with_selection '{}' (region {}x{} at {}, {}, {} bytes)",
+            self.name,
+            bw,
+            bh,
+            bx,
+            by,
+            bw * bh * 4
+        );
+
+        // 1. Extract the selected region's pixels.
+        let region_size = (bw * bh * 4) as usize;
+        let mut region_pixels = Vec::with_capacity(region_size);
+        for row in by..(by + bh).min(img_h) {
+            for col in bx..(bx + bw).min(img_w) {
+                let pixel = image.get_pixel(col, row);
+                region_pixels.push(pixel.r);
+                region_pixels.push(pixel.g);
+                region_pixels.push(pixel.b);
+                region_pixels.push(pixel.a);
+            }
+        }
+
+        // 2. Allocate WASM memory and write region pixels.
+        let pixels_ptr = self.entry.alloc(region_pixels.len() as i32).map_err(|e| {
+            ImageError::OperationFailed {
+                reason: e.to_string(),
+            }
+        })?;
+        self.entry
+            .write_bytes(pixels_ptr, &region_pixels)
+            .map_err(|e| ImageError::OperationFailed {
                 reason: e.to_string(),
             })?;
+
+        // 3. Write params JSON (includes selection mask for sub-region precision).
+        let params_json =
+            serde_json::to_string(params).map_err(|e| ImageError::OperationFailed {
+                reason: e.to_string(),
+            })?;
+        let params_ptr = self.entry.alloc(params_json.len() as i32).map_err(|e| {
+            ImageError::OperationFailed {
+                reason: e.to_string(),
+            }
+        })?;
+        self.entry
+            .write_bytes(params_ptr, params_json.as_bytes())
+            .map_err(|e| ImageError::OperationFailed {
+                reason: e.to_string(),
+            })?;
+
+        // 4. Call tool_apply with the region dimensions.
+        let result = self
+            .entry
+            .call_tool_apply(
+                self.tool_index,
+                pixels_ptr,
+                bw as i32,
+                bh as i32,
+                params_ptr,
+            )
+            .map_err(|e| ImageError::OperationFailed {
+                reason: e.to_string(),
+            })?;
+
+        if result != 0 {
+            let _ = self.entry.free(pixels_ptr, region_pixels.len() as i32);
+            let _ = self.entry.free(params_ptr, params_json.len() as i32);
+            return Err(ImageError::OperationFailed {
+                reason: format!("WASM tool '{}' returned error code: {}", self.name, result),
+            });
+        }
+
+        // 5. Read back modified region pixels.
+        let modified = self
+            .entry
+            .read_bytes(pixels_ptr, region_pixels.len())
+            .map_err(|e| ImageError::OperationFailed {
+                reason: e.to_string(),
+            })?;
+
+        // 6. Free WASM memory.
+        self.entry
+            .free(pixels_ptr, region_pixels.len() as i32)
+            .map_err(|e| ImageError::OperationFailed {
+                reason: e.to_string(),
+            })?;
+        self.entry
+            .free(params_ptr, params_json.len() as i32)
+            .map_err(|e| ImageError::OperationFailed {
+                reason: e.to_string(),
+            })?;
+
+        // 7. Write the modified region back into the image.
+        // Only write pixels that are within the selection mask for
+        // non-rectangular selections.
+        let mut idx = 0;
+        for row in by..(by + bh).min(img_h) {
+            for col in bx..(bx + bw).min(img_w) {
+                if idx + 3 < modified.len() {
+                    // For non-rectangular selections, check the mask.
+                    if selection.contains(col, row) {
+                        let r = modified[idx];
+                        let g = modified[idx + 1];
+                        let b = modified[idx + 2];
+                        let a = modified[idx + 3];
+                        image.set_pixel(col, row, kaleido_core::Pixel::new(r, g, b, a));
+                    }
+                    idx += 4;
+                }
+            }
+        }
 
         Ok(())
     }

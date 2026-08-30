@@ -21,6 +21,7 @@
 
 use kaleido_core::{ImageResult, TileCoord, TiledImage};
 
+use crate::keyboard::{KeyEvent, KeyModifiers, KeyState};
 use crate::Tool;
 
 // ---------------------------------------------------------------------------
@@ -249,5 +250,88 @@ pub trait InteractiveTool: Tool {
     /// deltas (e.g. merging duplicate pixels).
     fn on_stroke_end(&self, _ctx: &mut ToolContext) -> ImageResult<()> {
         Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Keyboard
+    // -----------------------------------------------------------------------
+
+    /// Called when a key is pressed while this tool is active.
+    ///
+    /// Use this to handle shortcuts such as:
+    /// - `[` / `]` to decrease / increase brush size.
+    /// - `Shift` to constrain proportions or draw straight lines.
+    /// - `Esc` to cancel the current stroke.
+    ///
+    /// The default implementation is a no-op.
+    fn on_key_down(&self, _event: &KeyEvent) -> ImageResult<()> {
+        Ok(())
+    }
+
+    /// Called when a key is released while this tool is active.
+    ///
+    /// The default implementation is a no-op.
+    fn on_key_up(&self, _event: &KeyEvent) -> ImageResult<()> {
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Tool lifecycle
+    // -----------------------------------------------------------------------
+
+    /// Called when this tool becomes active (the user selected it).
+    ///
+    /// Use it to reset per-tool state, initialise resources, or read
+    /// the current image dimensions. The default implementation is a
+    /// no-op.
+    fn on_activate(&self) {}
+
+    /// Called when this tool is being deselected (the user switched
+    /// to another tool).
+    ///
+    /// Use it to clean up temporary state, cancel pending operations,
+    /// or commit half-finished work. The default implementation is a
+    /// no-op.
+    fn on_deactivate(&self) {}
+
+    // -----------------------------------------------------------------------
+    // Modifier convenience (optional override)
+    // -----------------------------------------------------------------------
+
+    /// Returns the current modifier keys from the host's key state.
+    ///
+    /// Tools that need to react to held modifiers (Shift, Ctrl) inside
+    /// `on_mouse_drag` can call this through the host-provided
+    /// [`KeyState`]. The default always returns no modifiers.
+    fn modifiers(&self, _state: &dyn KeyState) -> KeyModifiers {
+        KeyModifiers::new(0)
+    }
+
+    // -----------------------------------------------------------------------
+    // Stroke query
+    // -----------------------------------------------------------------------
+
+    /// Returns `true` when this tool is mid-stroke and a pointer
+    /// release should be treated as the end of the stroke rather than
+    /// a stray event.
+    ///
+    /// The host uses this to decide whether to call `on_mouse_up` from
+    /// a global key handler (e.g. to finalise a stroke on `Enter`).
+    /// The default always returns `false`.
+    fn is_stroke_active(&self) -> bool {
+        false
+    }
+
+    // -----------------------------------------------------------------------
+    // Escape handling
+    // -----------------------------------------------------------------------
+
+    /// Called when the user presses Escape.
+    ///
+    /// The default cancels the active stroke (if any) and returns
+    /// `true` to indicate the event was handled. Override to implement
+    /// custom escape behaviour (e.g. dismiss a preview).
+    fn on_escape(&self) -> bool {
+        false
     }
 }

@@ -18,6 +18,9 @@ use std::sync::{Arc, Weak};
 use kaleido_core::{ImageResult, TiledImage};
 use serde_json::Value;
 
+use crate::category::ToolCategory;
+use crate::cursor::CursorType;
+
 // ---------------------------------------------------------------------------
 // ToolParams
 // ---------------------------------------------------------------------------
@@ -447,6 +450,45 @@ pub trait Tool: Send + Sync + 'static {
     /// Override this to declare your tool's parameters.
     fn schema(&self) -> ToolSchema {
         ToolSchema::new(self.name(), self.menu_path(), self.description())
+    }
+
+    /// Returns an icon key for this tool.
+    ///
+    /// The host uses this to look up an icon in its icon set. The string
+    /// is an opaque key (e.g. `"brightness"`, `"crop"`) — the host
+    /// maps it to the actual icon. Returning `None` falls back to the
+    /// category default icon.
+    fn icon(&self) -> Option<&str> {
+        None
+    }
+
+    /// Returns the functional category this tool belongs to.
+    ///
+    /// The host uses this for toolbar grouping and panel selection.
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Other
+    }
+
+    /// Returns whether the tool can currently be used.
+    ///
+    /// The host calls this to enable/disable menu items and toolbar
+    /// buttons. The default implementation always returns `true`.
+    ///
+    /// Common reasons to return `false`:
+    /// - No image is loaded (crop, flip, adjustments).
+    /// - No selection exists (fill inside selection, "via copy").
+    /// - The current layer is locked.
+    fn is_enabled(&self) -> bool {
+        true
+    }
+
+    /// Returns the cursor this tool wants the host to display.
+    ///
+    /// The host is responsible for actually showing the cursor — the
+    /// plugin only declares its preference. The default returns
+    /// [`CursorType::Default`].
+    fn cursor(&self) -> CursorType {
+        CursorType::Default
     }
 }
 

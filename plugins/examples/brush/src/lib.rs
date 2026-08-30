@@ -9,14 +9,17 @@ use std::sync::Mutex;
 
 use kaleido_core::{ImageResult, Pixel, TiledImage};
 use kaleido_traits::{
-    InteractiveTool, NumericConstraints, ParamSchema, ParamType, PointerEvent, Tool, ToolContext,
-    ToolParams, ToolSchema,
+    CursorType, InteractiveTool, KeyCode, KeyEvent, NumericConstraints, ParamSchema, ParamType,
+    PointerEvent, Tool, ToolContext, ToolParams, ToolSchema, ToolCategory,
 };
 
 /// A round-ish brush that paints along the pointer path.
 pub struct BrushTool {
-    /// Default brush diameter in pixels.
-    size: u32,
+    /// Brush diameter in pixels.
+    ///
+    /// Wrapped in `Mutex` because tools receive `&self` and the size
+    /// can be changed at runtime via keyboard (`[` / `]`).
+    size: Mutex<u32>,
     /// Default colour.
     color: Pixel,
     /// Last painted position, used to interpolate between drag events.
@@ -30,7 +33,7 @@ impl BrushTool {
     /// Creates a brush with the default size and colour.
     pub fn new() -> Self {
         Self {
-            size: 8,
+            size: Mutex::new(8),
             color: Pixel::rgb(220, 40, 40),
             last: Mutex::new(None),
         }
@@ -39,7 +42,7 @@ impl BrushTool {
     /// Creates a brush with a custom size and colour.
     pub fn with(size: u32, color: Pixel) -> Self {
         Self {
-            size,
+            size: Mutex::new(size),
             color,
             last: Mutex::new(None),
         }
@@ -82,7 +85,8 @@ impl BrushTool {
 
     /// Brush radius for this event (pressure scales it).
     fn radius(&self, event: &PointerEvent) -> f32 {
-        let radius = self.size as f32 / 2.0;
+        let size = self.size.lock().map(|s| *s).unwrap_or(8);
+        let radius = size as f32 / 2.0;
         let pressure = event.pressure.clamp(0.05, 1.0);
         radius * (0.6 + 0.4 * pressure)
     }
@@ -133,6 +137,23 @@ impl Tool for BrushTool {
                     .required(),
             )
     }
+
+    // ── Tool metadata ──────────────────────────────────────────────────
+
+    /// Icon key for the toolbar.
+    fn icon(&self) -> Option<&str> {
+        Some("brush")
+    }
+
+    /// Functional category for toolbar grouping.
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Painting
+    }
+
+    /// Brush-size circle cursor so the user sees the current size.
+    fn cursor(&self) -> CursorType {
+        CursorType::BrushCircle
+    }
 }
 
 impl InteractiveTool for BrushTool {
@@ -173,6 +194,57 @@ impl InteractiveTool for BrushTool {
         }
         Ok(())
     }
+
+    // ── Keyboard ───────────────────────────────────────────────────────
+
+    /// `[` decreases brush size, `]` increases it.
+    fn on_key_down(&self, event: &KeyEvent) -> ImageResult<()> {
+        let delta = match event.code {
+            KeyCode::LeftBracket => -2.0,
+            KeyCode::RightBracket => 2.0,
+            _ => return Ok(()),
+        };
+        let mut size = self.size.lock().map_err(|_| {
+            kaleido_core::ImageError::OperationFailed {
+                reason: "lock poisoned".into(),
+            }
+        })?;
+        let new_size = (*size as f32 + delta).clamp(1.0, 512.0) as u32;
+        *size = new_size;
+        Ok(())
+    }
+
+    /// Escape cancels the current stroke.
+    fn on_escape(&self) -> bool {
+        // The host will cancel the active stroke; we just signal that
+        // we handled the escape.
+        true
+    }
+
+    // ── Tool lifecycle ─────────────────────────────────────────────────
+
+    fn on_activate(&self) {
+        // Reset to default brush size when selected.
+        if let Ok(mut size) = self.size.lock() {
+            *size = 8;
+        }
+    }
+
+    fn on_deactivate(&self) {
+        // Clear the last position so the next activation starts fresh.
+        if let Ok(mut last) = self.last.lock() {
+            *last = None;
+        }
+    }
+
+    /// Reports whether a stroke is active so the host can finalise
+    /// the stroke on Enter or cancel on stray events.
+    fn is_stroke_active(&self) -> bool {
+        self.last
+            .lock()
+            .map(|last| last.is_some())
+            .unwrap_or(false)
+    }
 }
 
 /// Creates a shared brush tool instance.
@@ -210,5 +282,65 @@ mod tests {
 
         assert_eq!(image.get_pixel(32, 32), Pixel::rgb(255, 0, 0));
         assert!(!dirty.is_empty());
+    }
+
+    #[test]
+    fn test_brush_keyboard_size_adjustment() {
+        let brush = BrushTool::with(8, Pixel::rgb(255, 0, 0));
+
+        // `]` increases size.
+        brush
+            .on_key_down(&KeyEvent::plain(KeyCode::RightBracket))
+            .unwrap();
+        assert_eq!(*brush.size.lock().unwrap(), 10);
+
+        // `[` decreases size.
+        brush
+            .on_key_down(&KeyEvent::plain(KeyCode::LeftBracket))
+            .unwrap();
+        assert_eq!(*brush.size.lock().unwrap(), 8);
+
+        // Size clamps at minimum of 1.
+        let small_brush = BrushTool::with(1, Pixel::rgb(255, 0, 0));
+        small_brush
+            .on_key_down(&KeyEvent::plain(KeyCode::LeftBracket))
+            .unwrap();
+        assert_eq!(*small_brush.size.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_brush_escape_handling() {
+        let brush = BrushTool::new();
+        assert!(brush.on_escape());
+    }
+
+    #[test]
+    fn test_brush_lifecycle() {
+        let brush = BrushTool::new();
+        // on_activate resets size to default.
+        *brush.size.lock().unwrap() = 42;
+        brush.on_activate();
+        assert_eq!(*brush.size.lock().unwrap(), 8);
+
+        // on_deactivate clears last position.
+        *brush.last.lock().unwrap() = Some((10.0, 20.0));
+        brush.on_deactivate();
+        assert!(brush.last.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_brush_is_stroke_active() {
+        let brush = BrushTool::new();
+        assert!(!brush.is_stroke_active());
+        *brush.last.lock().unwrap() = Some((5.0, 5.0));
+        assert!(brush.is_stroke_active());
+    }
+
+    #[test]
+    fn test_brush_metadata() {
+        let brush = BrushTool::new();
+        assert_eq!(brush.icon(), Some("brush"));
+        assert_eq!(brush.category(), ToolCategory::Painting);
+        assert_eq!(brush.cursor(), CursorType::BrushCircle);
     }
 }

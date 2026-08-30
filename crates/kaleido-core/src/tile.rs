@@ -263,6 +263,39 @@ impl TiledImage {
         self.tiles.keys().copied()
     }
 
+    /// Returns the coordinates of tiles that intersect the given region.
+    ///
+    /// `region` is `(x, y, width, height)` in image-space pixels.
+    /// This is used for selection-based rendering to avoid iterating
+    /// over tiles outside the region of interest.
+    pub fn tile_coords_in_region(
+        &self,
+        region: (u32, u32, u32, u32),
+    ) -> impl Iterator<Item = TileCoord> + '_ {
+        let (rx, ry, rw, rh) = region;
+        let start_col = rx / TILE_SIZE;
+        let end_col = (rx + rw).min(self.width).div_ceil(TILE_SIZE);
+        let start_row = ry / TILE_SIZE;
+        let end_row = (ry + rh).min(self.height).div_ceil(TILE_SIZE);
+
+        self.tiles.keys().filter(move |coord| {
+            coord.col >= start_col
+                && coord.col < end_col
+                && coord.row >= start_row
+                && coord.row < end_row
+        })
+        .copied()
+    }
+
+    /// Returns the pixel region covered by a tile coordinate.
+    pub fn tile_region(coord: TileCoord) -> (u32, u32, u32, u32) {
+        let x = coord.col * TILE_SIZE;
+        let y = coord.row * TILE_SIZE;
+        let w = TILE_SIZE;
+        let h = TILE_SIZE;
+        (x, y, w, h)
+    }
+
     /// Returns the number of allocated tiles.
     pub fn tile_count(&self) -> usize {
         self.tiles.len()

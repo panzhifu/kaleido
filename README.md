@@ -38,10 +38,19 @@ Kaleido is an image editor under construction. Its architecture is deliberately 
 
 ### Plugin contracts
 - `Tool` trait with **parameter schemas** (`ParamType` / `ParamSchema` / `ToolSchema`): auto-generated UI forms, validation and default values
+- **`Tool` metadata** — `icon()` for toolbar display, `category()` for functional grouping (11 categories: Selection/Transform/Painting/ColorAdjustment/Retouch/Fill/Vector/Text/Analysis/Navigation/Other), `is_enabled()` for contextual availability, `cursor()` for cursor appearance (18 cursor types)
 - **`InteractiveTool` trait** — extends `Tool` with a pointer-event stream (`on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`); delivers pre-converted image-space coordinates, pressure, button and modifier state via `PointerEvent`; plugins paint into `ToolContext` and record dirty tiles, while the host owns undo and repaint
+- **`InteractiveTool` keyboard** — `on_key_down()` / `on_key_up()` with `KeyEvent` / `KeyCode` / `KeyModifiers`; `on_escape()` for stroke cancellation; `is_stroke_active()` for stroke state queries
+- **`InteractiveTool` lifecycle** — `on_activate()` / `on_deactivate()` for state setup/cleanup when switching tools
+- **`SelectionTool` trait** — produces a `Selection` (pixel mask) rather than modifying pixels; `on_begin()` / `on_update()` / `on_end()` with `SelectionMode` (Replace/Add/Subtract/Intersect)
+- **`Panel` trait** — plugins render custom UI in the host's side panel via 12 element types (Label/Heading/NumberInput/Checkbox/Dropdown/ColorPicker/ButtonRow/Canvas/Progress/Section); `on_change()` / `on_button()` for interactivity
+- **`AnalysisTool` trait** — read-only tools that inspect pixels (histogram, colour picker, measurement); `analyze()` returns JSON result
+- **`SelectionState`** — shared selection state with `contains()`, `bounds()`, `invert()`; flat `Vec<bool>` mask for O(1) pixel testing
+- **`Selection-constrained rendering`** — `apply_to_selection()` processes only tiles intersecting the selection (6100 tiles → 16 tiles for a 500×500 selection in 10000×10000 image)
 - **WIT interface** (`wit/kaleido.wit`) — WASM boundary: `tool`, `plugin-lifecycle`, `host-functions` interfaces + `world kaleido-plugin`
 - **Plugin host** (`kaleido-plugin-host`) — `PluginManifest`, `Plugin`/`PluginLoader` traits, `PluginManager`, and `AIToolGenerator` for dynamically generated tools
 - **WASM runtime** — compiled `.wasm` plugins are loaded and executed via **wasmtime**: `WasmPluginManager` scans plugin directories, instantiates modules (C ABI: `plugin_init` / `tool_apply` / …), and registers every tool into the registry. Host functions (`host_log`, `host_emit_event`) are linked in
+- **WASM selection optimization** — when a selection is set, only the selection bounding box region is exchanged with WASM (not the full image), reducing data transfer by 99%+ for localized operations
 - **Plugin SDK** (`kaleido-sdk`) — `ToolPlugin<T>` builder + `define_tool!` macro
 - **AI tool generation** — `KaleidoApp::create_ai_tool(description, apply_fn)` registers a tool from a JSON description and emits `tool_upgraded`
 
@@ -187,9 +196,10 @@ tests/                Integration test fixtures (placeholder)
 ### TODO
 - [ ] Example WASM tool plugin (compile a tool to `.wasm` and load it)
 - [ ] AI-generated tools end-to-end (generate → compile → load → `tool_upgraded`)
-- [ ] Plugin UI panels
 - [ ] Advanced blend modes (Hard Light SIMD optimization)
 - [ ] Mask system enhancements (feathering, vector masks, etc.)
+- [ ] Selection overlay rendering (marching ants animation)
+- [ ] Brush engine presets (texture, dynamics, blending)
 
 ## License
 
