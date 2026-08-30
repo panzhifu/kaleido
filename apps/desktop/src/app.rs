@@ -1,11 +1,12 @@
 //! Main application structure with hybrid state management.
 
 use gpui::*;
+#[allow(unused_imports)]
 use gpui::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use kaleido_core::{Image, TiledImage};
+use kaleido_core::TiledImage;
 use kaleido_services::app::{AppConfig, KaleidoApp};
 use kaleido_services::async_io::{AsyncImageLoader, BackgroundSaver};
 use kaleido_tool_brightness::{BrightnessToolConfig, brightness_tool_plugin};
@@ -25,7 +26,9 @@ pub struct KaleidoEditor {
     viewport: ViewportState,
     layers_state: LayersState,
     tools_state: ToolsState,
+    #[allow(dead_code)]
     loader: AsyncImageLoader,
+    #[allow(dead_code)]
     saver: BackgroundSaver,
     image_path: Option<PathBuf>,
     status: String,
@@ -59,36 +62,33 @@ impl KaleidoEditor {
     }
 
     pub fn open_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if self.app.file_codec_registry().load(&path).is_ok() {
+        if let Ok(tiled) = self.app.file_codec_registry().load(&path) {
             self.image_path = Some(path.clone());
-            if let Ok(image) = self.app.file_codec_registry().load(&path) {
-                if let Ok(tiled) = TiledImage::from_packed(&image) {
-                    let stack = kaleido_services::layer::LayerStack::with_background(
-                        image.width(), image.height(), tiled,
-                    );
-                    self.layers_state.set_stack(stack);
-                    self.canvas.update(cx, |canvas, cx| {
-                        canvas.load_image(path.clone(), image.width(), image.height(), cx);
-                    });
-                    self.viewport.set_image_size(image.width(), image.height());
-                    self.viewport.fit_to_screen(900.0, 600.0);
-                    self.history.update(cx, |history, cx| {
-                        history.add_entry("打开".to_string(), format!("{}", path.display()), cx);
-                    });
-                    self.status = format!("已打开: {}", path.display());
-                    cx.notify();
-                }
-            }
+            let w = tiled.width();
+            let h = tiled.height();
+            let stack = kaleido_services::layer::LayerStack::with_background(
+                w, h, tiled,
+            );
+            self.layers_state.set_stack(stack);
+            self.canvas.update(cx, |canvas, cx| {
+                canvas.load_image(path.clone(), w, h, cx);
+            });
+            self.viewport.set_image_size(w, h);
+            self.viewport.fit_to_screen(900.0, 600.0);
+            self.history.update(cx, |history, cx| {
+                history.add_entry("打开".to_string(), format!("{}", path.display()), cx);
+            });
+            self.status = format!("已打开: {}", path.display());
+            cx.notify();
         }
     }
 
-    pub fn get_current_image(&self) -> Option<Image> {
+    pub fn get_current_image(&self) -> Option<TiledImage> {
         let bg = self.layers_state.stack.background()?;
-        let tiled = match &bg.content {
-            kaleido_services::layer::LayerContent::Pixels(img) => img,
-            _ => return None,
-        };
-        tiled.to_packed().ok()
+        match &bg.content {
+            kaleido_services::layer::LayerContent::Pixels(img) => Some(img.clone()),
+            _ => None,
+        }
     }
 
     pub fn apply_tool(&mut self, tool_name: &str, cx: &mut Context<Self>) {
@@ -96,24 +96,20 @@ impl KaleidoEditor {
         if let Some(tool) = self.app.tool_registry().get(tool_name) {
             if let Some(mut image) = self.get_current_image() {
                 if tool.apply(&mut image, &params).is_ok() {
-                    if let Ok(tiled) = TiledImage::from_packed(&image) {
-                        let stack = kaleido_services::layer::LayerStack::with_background(
-                            image.width(), image.height(), tiled,
-                        );
-                        self.layers_state.set_stack(stack);
-                    }
+                    let w = image.width();
+                    let h = image.height();
+                    let stack = kaleido_services::layer::LayerStack::with_background(w, h, image.clone());
+                    self.layers_state.set_stack(stack);
                     self.canvas.update(cx, |canvas, cx| {
                         if let Some(path) = &self.image_path {
-                            canvas.load_image(path.clone(), image.width(), image.height(), cx);
+                            canvas.load_image(path.clone(), w, h, cx);
                         }
                     });
                     self.history.update(cx, |history, cx| {
                         history.add_entry(tool_name.to_string(), "应用".to_string(), cx);
                     });
                     if let Some(path) = self.image_path.clone() {
-                        if let Ok(tiled) = TiledImage::from_packed(&image) {
-                            self.saver.save(tiled, path, kaleido_traits::ImageFormat::Png, self.app.file_codec_registry());
-                        }
+                        self.saver.save(image, path, kaleido_traits::ImageFormat::Png, self.app.file_codec_registry());
                     }
                     self.status = format!("已应用 '{}'", tool_name);
                     cx.notify();
@@ -146,7 +142,7 @@ impl Render for KaleidoEditor {
                 div().flex().items_center().h(px(32.0)).bg(rgb(color::BG_TOOLBAR)).px_4().gap_1()
                     .child(div().id("menu_open").px_3().py_1().rounded(px(4.0)).bg(rgb(color::ACCENT))
                         .text_color(rgb(color::TEXT_PRIMARY)).text_sm()
-                        .on_click(cx.listener(|this, _, _window, cx| {
+                        .on_click(cx.listener(|_this, _, _window, cx| {
                             let rx = cx.prompt_for_paths(gpui::PathPromptOptions {
                                 files: true, directories: false, multiple: false,
                                 prompt: Some("打开图片".into()),

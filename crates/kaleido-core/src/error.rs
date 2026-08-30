@@ -1,4 +1,4 @@
-use crate::image::PixelFormat;
+use crate::pixel::PixelFormat;
 use thiserror::Error;
 
 /// Core error type for all kaleido operations.

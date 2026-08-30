@@ -1,7 +1,9 @@
 //! Tool parameters panel.
 
 use gpui::*;
+#[allow(unused_imports)]
 use gpui::prelude::*;
+#[allow(unused_imports)]
 use std::sync::Arc;
 
 use kaleido_traits::ToolRegistry;
@@ -10,6 +12,7 @@ use crate::messages::ToolParamsEvent;
 use crate::theme::color;
 
 pub struct ToolParamsPanel {
+    #[allow(dead_code)]
     registry: Arc<dyn ToolRegistry>,
     focus_handle: FocusHandle,
 }
@@ -19,7 +22,7 @@ impl ToolParamsPanel {
         Self { registry, focus_handle: cx.focus_handle() }
     }
 
-    pub fn set_tool(&mut self, tool_name: &str, cx: &mut Context<Self>) {
+    pub fn set_tool(&mut self, _tool_name: &str, cx: &mut Context<Self>) {
         cx.emit(ToolParamsEvent::ParamsChanged { params: serde_json::json!({}) });
     }
 }

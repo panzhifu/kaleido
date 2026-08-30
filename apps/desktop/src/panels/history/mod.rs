@@ -1,6 +1,7 @@
 //! History panel.
 
 use gpui::*;
+#[allow(unused_imports)]
 use gpui::prelude::*;
 
 use crate::messages::HistoryEvent;

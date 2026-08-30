@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use chrono;
 use cordis::{Context, Service};
-use kaleido_core::{Image, ImageError, ImageMetadata, ImageResult, PixelFormat};
+use kaleido_core::{ImageError, ImageMetadata, ImageResult, PixelFormat, TiledImage};
 use kaleido_traits::{
     FileCodec, ImageFormat, ImageStore, KaleidoEmitter, ImageChangedEvent, ImageClearedEvent,
     ImageLoadedEvent, ImageSavedEvent,
@@ -19,7 +19,7 @@ use tracing::{info, warn};
 /// Internal state of the image store, protected by a single `RwLock`.
 struct StoreState {
     /// The current image (None = no image loaded).
-    current: Option<Image>,
+    current: Option<TiledImage>,
     /// The file path associated with the current image.
     file_path: Option<PathBuf>,
     /// The file format for saving (inferred from extension on open / save_as).
@@ -225,7 +225,7 @@ impl ImageStore for ImageStoreImpl {
 
     // ─── Data reading ───
 
-    fn get_image(&self) -> ImageResult<Option<Image>> {
+    fn get_image(&self) -> ImageResult<Option<TiledImage>> {
         let state = self.state.read().map_err(|_| ImageError::OperationFailed {
             reason: "Failed to acquire read lock in get_image()".to_string(),
         })?;
@@ -275,7 +275,7 @@ impl ImageStore for ImageStoreImpl {
 
     fn apply_mutation(
         &self,
-        mutator: Box<dyn FnOnce(&mut Image) -> ImageResult<()>>,
+        mutator: Box<dyn FnOnce(&mut TiledImage) -> ImageResult<()>>,
     ) -> ImageResult<()> {
         let start = Instant::now();
 
@@ -300,7 +300,7 @@ impl ImageStore for ImageStoreImpl {
         Ok(())
     }
 
-    fn set_image(&self, new_image: Image) -> ImageResult<()> {
+    fn set_image(&self, new_image: TiledImage) -> ImageResult<()> {
         let mut state = self
             .state
             .write()
@@ -320,13 +320,13 @@ impl ImageStore for ImageStoreImpl {
 
     // ─── State query ───
 
-    fn snapshot(&self) -> ImageResult<Option<Image>> {
+    fn snapshot(&self) -> ImageResult<Option<TiledImage>> {
         self.get_image()
     }
 
     // ─── Undo support ───
 
-    fn restore_state(&self, image: Image) -> ImageResult<()> {
+    fn restore_state(&self, image: TiledImage) -> ImageResult<()> {
         let mut state = self
             .state
             .write()
@@ -431,7 +431,7 @@ mod tests {
     fn test_apply_mutation_on_empty_returns_error() {
         let (store, _, _) = create_store();
         let result = store.apply_mutation(Box::new(|img| {
-            img.set_pixel(0, 0, Pixel::rgb(255, 0, 0))?;
+            img.set_pixel(0, 0, Pixel::rgb(255, 0, 0));
             Ok(())
         }));
         assert!(result.is_err());
@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn test_set_and_get_image() {
         let (store, events, _ctx) = create_store();
-        let img = Image::with_color(10, 10, PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap();
+        let img = TiledImage::with_color(10, 10, PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap();
 
         store.set_image(img.clone()).unwrap();
 
@@ -451,7 +451,7 @@ mod tests {
         assert_eq!(retrieved.width(), 10);
         assert_eq!(retrieved.height(), 10);
 
-        let pixel = retrieved.get_pixel(0, 0).unwrap();
+        let pixel = retrieved.get_pixel(0, 0);
         assert_eq!(pixel.r, 255);
         assert_eq!(pixel.g, 0);
         assert_eq!(pixel.b, 0);
@@ -466,18 +466,18 @@ mod tests {
     #[test]
     fn test_apply_mutation_modifies_image() {
         let (store, events, _ctx) = create_store();
-        let img = Image::with_color(5, 5, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
+        let img = TiledImage::with_color(5, 5, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
         store.set_image(img).unwrap();
 
         store
             .apply_mutation(Box::new(|img| {
-                img.set_pixel(2, 2, Pixel::rgb(128, 128, 128))?;
+                img.set_pixel(2, 2, Pixel::rgb(128, 128, 128));
                 Ok(())
             }))
             .unwrap();
 
         let retrieved = store.get_image().unwrap().unwrap();
-        let pixel = retrieved.get_pixel(2, 2).unwrap();
+        let pixel = retrieved.get_pixel(2, 2);
         assert_eq!(pixel.r, 128);
         assert_eq!(pixel.g, 128);
         assert_eq!(pixel.b, 128);
@@ -490,14 +490,14 @@ mod tests {
     #[test]
     fn test_snapshot() {
         let (store, _, _) = create_store();
-        let img = Image::with_color(3, 3, PixelFormat::Rgba8, Pixel::rgb(100, 200, 50)).unwrap();
+        let img = TiledImage::with_color(3, 3, PixelFormat::Rgba8, Pixel::rgb(100, 200, 50)).unwrap();
         store.set_image(img).unwrap();
 
         let snapshot = store.snapshot().unwrap().unwrap();
         assert_eq!(snapshot.width(), 3);
         assert_eq!(snapshot.height(), 3);
 
-        let pixel = snapshot.get_pixel(1, 1).unwrap();
+        let pixel = snapshot.get_pixel(1, 1);
         assert_eq!(pixel.r, 100);
         assert_eq!(pixel.g, 200);
         assert_eq!(pixel.b, 50);
@@ -508,7 +508,7 @@ mod tests {
         let (store, events, _ctx) = create_store();
 
         // Load an initial image.
-        let img1 = Image::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap();
+        let img1 = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap();
         store.set_image(img1).unwrap();
 
         // Create a snapshot.
@@ -517,21 +517,21 @@ mod tests {
         // Modify the image.
         store
             .apply_mutation(Box::new(|img| {
-                img.set_pixel(0, 0, Pixel::rgb(0, 255, 0))?;
+                img.set_pixel(0, 0, Pixel::rgb(0, 255, 0));
                 Ok(())
             }))
             .unwrap();
 
         // Verify it was modified.
         let modified = store.get_image().unwrap().unwrap();
-        assert_eq!(modified.get_pixel(0, 0).unwrap().g, 255);
+        assert_eq!(modified.get_pixel(0, 0).g, 255);
 
         // Restore the snapshot.
         store.restore_state(snapshot).unwrap();
 
         // Verify it was restored.
         let restored = store.get_image().unwrap().unwrap();
-        assert_eq!(restored.get_pixel(0, 0).unwrap().r, 255);
+        assert_eq!(restored.get_pixel(0, 0).r, 255);
 
         // Verify a restore_state image_changed event was emitted.
         let events = events.read().unwrap();
@@ -547,7 +547,7 @@ mod tests {
     #[test]
     fn test_clear() {
         let (store, events, _ctx) = create_store();
-        let img = Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(0, 0, 255)).unwrap();
+        let img = TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(0, 0, 255)).unwrap();
         store.set_image(img).unwrap();
 
         assert!(store.has_image());
@@ -570,7 +570,7 @@ mod tests {
 
         let (store, _, _) = create_store();
         let img =
-            Image::with_color(100, 100, PixelFormat::Rgba8, Pixel::rgb(100, 150, 200)).unwrap();
+            TiledImage::with_color(100, 100, PixelFormat::Rgba8, Pixel::rgb(100, 150, 200)).unwrap();
         store.set_image(img).unwrap();
 
         let store_arc = Arc::new(store);
@@ -594,7 +594,7 @@ mod tests {
     fn test_get_metadata() {
         let (store, _, _) = create_store();
         let mut img =
-            Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(50, 100, 150)).unwrap();
+            TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(50, 100, 150)).unwrap();
         img.metadata_mut().description = Some("Test image".to_string());
 
         store.set_image(img).unwrap();

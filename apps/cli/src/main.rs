@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use kaleido_core::{Image, Pixel, PixelFormat};
+use kaleido_core::{Pixel, PixelFormat, TiledImage};
 use kaleido_services::app::{AppConfig, KaleidoApp};
 use kaleido_tool_brightness::{BrightnessToolConfig, brightness_tool_plugin};
 use kaleido_tool_invert::invert_tool_plugin;
@@ -323,8 +323,7 @@ fn cmd_resize(
         .load(Path::new(input))
         .with_context(|| format!("Failed to load image: {}", input))?;
 
-    let mut resized = Image::new(width, height, PixelFormat::Rgba8)
-        .with_context(|| format!("Failed to create target image: {}×{}", width, height))?;
+    let mut resized = TiledImage::new(width, height, PixelFormat::Rgba8);
 
     let x_ratio = image.width() as f32 / width as f32;
     let y_ratio = image.height() as f32 / height as f32;
@@ -333,12 +332,8 @@ fn cmd_resize(
         for x in 0..width {
             let src_x = ((x as f32 * x_ratio) as u32).min(image.width() - 1);
             let src_y = ((y as f32 * y_ratio) as u32).min(image.height() - 1);
-            let pixel = image
-                .get_pixel(src_x, src_y)
-                .with_context(|| format!("Failed to read pixel ({}, {})", src_x, src_y))?;
-            resized
-                .set_pixel(x, y, pixel)
-                .with_context(|| format!("Failed to write pixel ({}, {})", x, y))?;
+            let pixel = image.get_pixel(src_x, src_y);
+            resized.set_pixel(x, y, pixel);
         }
     }
 
@@ -363,17 +358,13 @@ fn cmd_grayscale(codec: &dyn FileCodec, input: &str, output: &str) -> anyhow::Re
 
     for y in 0..image.height() {
         for x in 0..image.width() {
-            let pixel = image
-                .get_pixel(x, y)
-                .with_context(|| format!("Failed to read pixel ({}, {})", x, y))?;
+            let pixel = image.get_pixel(x, y);
 
             // ITU-R BT.601 luma coefficients: R*0.299 + G*0.587 + B*0.114
             let gray =
                 ((pixel.r as u32 * 299 + pixel.g as u32 * 587 + pixel.b as u32 * 114) / 1000) as u8;
 
-            image
-                .set_pixel(x, y, Pixel::new(gray, gray, gray, pixel.a))
-                .with_context(|| format!("Failed to write pixel ({}, {})", x, y))?;
+            image.set_pixel(x, y, Pixel::new(gray, gray, gray, pixel.a));
         }
     }
 
@@ -508,10 +499,10 @@ fn cmd_create_tool(
             // The AI would replace this with actual logic.
             for y in 0..image.height() {
                 for x in 0..image.width() {
-                    let p = image.get_pixel(x, y)?;
+                    let p = image.get_pixel(x, y);
                     let gray =
                         ((p.r as u32 * 299 + p.g as u32 * 587 + p.b as u32 * 114) / 1000) as u8;
-                    image.set_pixel(x, y, Pixel::new(gray, gray, gray, p.a))?;
+                    image.set_pixel(x, y, Pixel::new(gray, gray, gray, p.a));
                 }
             }
             Ok(())

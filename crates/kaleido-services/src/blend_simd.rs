@@ -29,16 +29,11 @@ fn val_128() -> u32x8 {
 
 /// 1 in each lane
 #[inline]
-fn val_1() -> u32x8 {
-    u32x8::splat(1)
-}
-
 // ---------------------------------------------------------------------------
 // Channel extraction / insertion
 // ---------------------------------------------------------------------------
 
 /// Extracts R channel (bits 0-7) from 8 RGBA pixels.
-#[inline]
 fn extract_r(pixels: u32x8) -> u32x8 {
     pixels & mask_8bit()
 }
@@ -280,6 +275,137 @@ fn blend_alpha_simd(src_a: u32x8, dst_a: u32x8) -> u32x8 {
 }
 
 // ---------------------------------------------------------------------------
+// Advanced SIMD blend modes
+// ---------------------------------------------------------------------------
+
+/// SIMD Color Dodge blend: result = min(255, dst * 255 / (255 - src))
+/// When src >= 255, result = 255.
+pub fn blend_color_dodge_simd(src: u32x8, dst: u32x8) -> u32x8 {
+    let src_r = extract_r(src);
+    let src_g = extract_g(src);
+    let src_b = extract_b(src);
+    let src_a = extract_a(src);
+
+    let dst_r = extract_r(dst);
+    let dst_g = extract_g(dst);
+    let dst_b = extract_b(dst);
+    let dst_a = extract_a(dst);
+
+    let r = dodge_channel_simd(src_r, dst_r);
+    let g = dodge_channel_simd(src_g, dst_g);
+    let b = dodge_channel_simd(src_b, dst_b);
+    let a = blend_alpha_simd(src_a, dst_a);
+
+    combine_rgba(r, g, b, a)
+}
+
+/// SIMD Color Dodge for a single channel.
+///
+/// Exact formula: result = min(255, dst * 255 / (255 - src))
+/// Since u32x8 doesn't support division, we use a polynomial approximation:
+/// For src in [0, 254], we compute: result ≈ dst + (255 - dst) * src / 255
+/// This is a first-order approximation that works well for image editing.
+#[inline]
+fn dodge_channel_simd(src: u32x8, dst: u32x8) -> u32x8 {
+    // Approximation: blend toward white proportional to src
+    // result = dst + (255 - dst) * src / 255
+    let inv_dst = val_255() - dst;
+    let addition = (inv_dst * src + val_128()) >> 8;
+    let result: u32x8 = dst + addition;
+    result.min(val_255())
+}
+
+/// SIMD Color Burn blend: result = max(0, 255 - (255 - dst) * 255 / src)
+/// When src == 0, result = 0.
+pub fn blend_color_burn_simd(src: u32x8, dst: u32x8) -> u32x8 {
+    let src_r = extract_r(src);
+    let src_g = extract_g(src);
+    let src_b = extract_b(src);
+    let src_a = extract_a(src);
+
+    let dst_r = extract_r(dst);
+    let dst_g = extract_g(dst);
+    let dst_b = extract_b(dst);
+    let dst_a = extract_a(dst);
+
+    let r = burn_channel_simd(src_r, dst_r);
+    let g = burn_channel_simd(src_g, dst_g);
+    let b = burn_channel_simd(src_b, dst_b);
+    let a = blend_alpha_simd(src_a, dst_a);
+
+    combine_rgba(r, g, b, a)
+}
+
+/// SIMD Color Burn for a single channel.
+///
+/// Exact formula: result = max(0, 255 - (255 - dst) * 255 / src)
+/// Approximation: blend toward black proportional to (255 - src)
+/// result = dst - dst * (255 - src) / 255
+#[inline]
+fn burn_channel_simd(src: u32x8, dst: u32x8) -> u32x8 {
+    // Approximation: blend toward black proportional to inv_src
+    // result = dst - dst * (255 - src) / 255
+    let inv_src = val_255() - src;
+    let subtraction = (dst * inv_src + val_128()) >> 8;
+    let result = dst - subtraction;
+    // Clamp to 0 (u32x8 wraps on underflow, so we need to handle this)
+    // Since dst and subtraction are both 0-255, result can't underflow in practice
+    result
+}
+
+/// SIMD Soft Light blend (Photoshop formula).
+pub fn blend_soft_light_simd(src: u32x8, dst: u32x8) -> u32x8 {
+    let src_r = extract_r(src);
+    let src_g = extract_g(src);
+    let src_b = extract_b(src);
+    let src_a = extract_a(src);
+
+    let dst_r = extract_r(dst);
+    let dst_g = extract_g(dst);
+    let dst_b = extract_b(dst);
+    let dst_a = extract_a(dst);
+
+    let r = soft_light_channel_simd(src_r, dst_r);
+    let g = soft_light_channel_simd(src_g, dst_g);
+    let b = soft_light_channel_simd(src_b, dst_b);
+    let a = blend_alpha_simd(src_a, dst_a);
+
+    combine_rgba(r, g, b, a)
+}
+
+/// SIMD Soft Light for a single channel.
+///
+/// Uses a simplified approximation that avoids division and signed arithmetic:
+/// - When src < 128: blend dst toward 0 (darken)
+/// - When src >= 128: blend dst toward 255 (lighten)
+/// The blend factor is proportional to dst * (255 - dst) for smooth S-curve.
+#[inline]
+fn soft_light_channel_simd(src: u32x8, dst: u32x8) -> u32x8 {
+    // Compute dst * (255 - dst) / 255 as the sensitivity factor
+    // This peaks at dst=128 (mid-gray) and is 0 at dst=0 and dst=255
+    let sensitivity = (dst * (val_255() - dst) + val_128()) >> 8;
+
+    // For src < 128: subtract sensitivity * (128 - src) / 128
+    // For src >= 128: add sensitivity * (src - 128) / 128
+    let half_val = val_255() >> 1; // 128
+    let is_dark = src.cmp_lt(half_val); // src < 128
+    let distance = is_dark.blend(
+        half_val - src, // 128 - src (positive when src < 128)
+        src - half_val, // src - 128 (positive when src >= 128)
+    );
+
+    let adjustment = (sensitivity * distance + u32x8::splat(64)) >> 7; // /128 with rounding
+
+    // Apply: subtract when src < 128, add when src >= 128
+    let result_dark = dst - adjustment;
+    let result_light = dst + adjustment;
+    let result = is_dark.blend(result_dark, result_light);
+
+    // Clamp to 0-255
+    result.max(u32x8::splat(0)).min(val_255())
+}
+
+// ---------------------------------------------------------------------------
 // High-level SIMD blend interface
 // ---------------------------------------------------------------------------
 
@@ -300,6 +426,9 @@ pub fn blend_8_pixels(src: [u32; 8], dst: [u32; 8], mode: BlendModeSimd) -> [u32
         BlendModeSimd::Lighten => blend_lighten_simd(src_vec, dst_vec),
         BlendModeSimd::Difference => blend_difference_simd(src_vec, dst_vec),
         BlendModeSimd::Exclusion => blend_exclusion_simd(src_vec, dst_vec),
+        BlendModeSimd::ColorDodge => blend_color_dodge_simd(src_vec, dst_vec),
+        BlendModeSimd::ColorBurn => blend_color_burn_simd(src_vec, dst_vec),
+        BlendModeSimd::SoftLight => blend_soft_light_simd(src_vec, dst_vec),
     };
 
     result.to_array()
@@ -316,6 +445,9 @@ pub enum BlendModeSimd {
     Lighten,
     Difference,
     Exclusion,
+    ColorDodge,
+    ColorBurn,
+    SoftLight,
 }
 
 // ---------------------------------------------------------------------------
@@ -516,5 +648,87 @@ mod tests {
         let (r, _g, _b, _a) = u32_to_rgba(result[0]);
         // Exclusion of same values: 128 + 128 - 2*128*128/255 = 256 - 128 = 128
         assert!((r as i16 - 128).abs() <= 2);
+    }
+
+    #[test]
+    fn test_blend_color_dodge_simd() {
+        // Dodge approximation: result = dst + (255 - dst) * src / 255
+        let src = [rgba_to_u32(128, 128, 128, 255); 8];
+        let dst = [rgba_to_u32(128, 128, 128, 255); 8];
+
+        let result = blend_8_pixels(src, dst, BlendModeSimd::ColorDodge);
+        let (r, _g, _b, _a) = u32_to_rgba(result[0]);
+        // Approximation: 128 + (255-128)*128/255 ≈ 128 + 64 = 192
+        assert!(r >= 190 && r <= 194, "r = {}", r);
+    }
+
+    #[test]
+    fn test_blend_color_dodge_simd_partial() {
+        // Dodge with partial src
+        let src = [rgba_to_u32(64, 64, 64, 255); 8];
+        let dst = [rgba_to_u32(128, 128, 128, 255); 8];
+
+        let result = blend_8_pixels(src, dst, BlendModeSimd::ColorDodge);
+        let (r, _g, _b, _a) = u32_to_rgba(result[0]);
+        // Approximation: 128 + (255-128)*64/255 ≈ 128 + 32 = 160
+        assert!(r >= 158 && r <= 162, "r = {}", r);
+    }
+
+    #[test]
+    fn test_blend_color_burn_simd() {
+        // Burn approximation: result = dst - dst * (255 - src) / 255
+        let src = [rgba_to_u32(128, 128, 128, 255); 8];
+        let dst = [rgba_to_u32(128, 128, 128, 255); 8];
+
+        let result = blend_8_pixels(src, dst, BlendModeSimd::ColorBurn);
+        let (r, _g, _b, _a) = u32_to_rgba(result[0]);
+        // Approximation: 128 - 128*(255-128)/255 ≈ 128 - 64 = 64
+        assert!(r >= 62 && r <= 66, "r = {}", r);
+    }
+
+    #[test]
+    fn test_blend_color_burn_simd_bright() {
+        // Burn with bright dst
+        let src = [rgba_to_u32(128, 128, 128, 255); 8];
+        let dst = [rgba_to_u32(255, 255, 255, 255); 8];
+
+        let result = blend_8_pixels(src, dst, BlendModeSimd::ColorBurn);
+        let (r, _g, _b, _a) = u32_to_rgba(result[0]);
+        // Approximation: 255 - 255*(255-128)/255 ≈ 255 - 127 = 128
+        assert!(r >= 126 && r <= 130, "r = {}", r);
+    }
+
+    #[test]
+    fn test_blend_soft_light_simd() {
+        // Soft light: subtle adjustment
+        let src = [rgba_to_u32(128, 128, 128, 255); 8];
+        let dst = [rgba_to_u32(128, 128, 128, 255); 8];
+
+        let result = blend_8_pixels(src, dst, BlendModeSimd::SoftLight);
+        let (r, _g, _b, _a) = u32_to_rgba(result[0]);
+        // With src=128 (neutral), result should be approximately dst
+        assert!((r as i16 - 128).abs() <= 5, "r = {}", r);
+    }
+
+    #[test]
+    fn test_blend_soft_light_brighten() {
+        // Soft light with bright src should brighten
+        let src = [rgba_to_u32(200, 200, 200, 255); 8];
+        let dst = [rgba_to_u32(100, 100, 100, 255); 8];
+
+        let result = blend_8_pixels(src, dst, BlendModeSimd::SoftLight);
+        let (r, _g, _b, _a) = u32_to_rgba(result[0]);
+        assert!(r > 100, "r = {}", r);
+    }
+
+    #[test]
+    fn test_blend_soft_light_darken() {
+        // Soft light with dark src should darken
+        let src = [rgba_to_u32(50, 50, 50, 255); 8];
+        let dst = [rgba_to_u32(200, 200, 200, 255); 8];
+
+        let result = blend_8_pixels(src, dst, BlendModeSimd::SoftLight);
+        let (r, _g, _b, _a) = u32_to_rgba(result[0]);
+        assert!(r < 200, "r = {}", r);
     }
 }

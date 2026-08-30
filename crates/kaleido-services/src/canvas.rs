@@ -4,10 +4,8 @@
 //! on the GPU via GPUI's rendering backend.  It does not modify pixel
 //! data — it only controls how existing pixel data is displayed.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 
-use kaleido_core::{ImageResult, TiledImage, TILE_SIZE};
+use kaleido_core::TILE_SIZE;
 
 // ---------------------------------------------------------------------------
 // Viewport

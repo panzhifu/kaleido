@@ -7,7 +7,6 @@
 //! automatically fused into a single pass.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
 
 use kaleido_core::{ImageResult, PixelFormat, TiledImage};
 use rayon::prelude::*;
@@ -122,11 +121,11 @@ pub trait Op: Send + Sync + 'static {
 pub struct NodeId(pub usize);
 
 /// A node in the operation graph.
-struct OpNode {
-    id: NodeId,
-    op: Box<dyn Op>,
+pub struct OpNode {
+    pub id: NodeId,
+    pub op: Box<dyn Op>,
     /// Input edges: (source_node_id, source_output_index).
-    inputs: Vec<(NodeId, u32)>,
+    pub inputs: Vec<(NodeId, u32)>,
 }
 
 /// A directed acyclic graph of image operations.
@@ -308,7 +307,7 @@ impl Op for FusedOp {
             let prev = &intermediate;
             // We wrap it in a slice of one element because compute_roi
             // expects a slice of optional inputs.
-            let input: Option<&TiledImage> = Some(prev);
+            let _input: Option<&TiledImage> = Some(prev);
             let inputs: &[Option<&TiledImage>] = &[Some(prev)];
             intermediate = op.compute_roi(roi, inputs)?;
         }
@@ -693,7 +692,7 @@ mod tests {
 
     #[test]
     fn test_executor_single_op() {
-        let source = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255));
+        let source = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255)).unwrap();
 
         let mut graph = OpGraph::new();
         let src = graph.add_node(Box::new(SourceOp { image: source }), &[]);
@@ -711,7 +710,7 @@ mod tests {
 
     #[test]
     fn test_executor_chain() {
-        let source = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255));
+        let source = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255)).unwrap();
 
         let mut graph = OpGraph::new();
         let src = graph.add_node(Box::new(SourceOp { image: source }), &[]);
@@ -743,7 +742,7 @@ mod tests {
     fn test_tile_parallel_execution() {
         // Create a large image (256x256 = 4 tiles of 128x128).
         let source =
-            TiledImage::with_color(256, 256, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255));
+            TiledImage::with_color(256, 256, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255)).unwrap();
 
         let mut graph = OpGraph::new();
         let src = graph.add_node(Box::new(SourceOp { image: source }), &[]);

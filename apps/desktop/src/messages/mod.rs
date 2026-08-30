@@ -1,8 +1,12 @@
 //! Inter-panel event types.
+//!
+//! These enums define messages passed between UI panels.
+//! All variants will be wired up as the UI is implemented.
 
 use kaleido_services::layer::LayerId;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum CanvasEvent {
     ZoomChanged { zoom: f32 },
     OffsetChanged { x: f32, y: f32 },
@@ -12,6 +16,7 @@ pub enum CanvasEvent {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum LayersEvent {
     LayerAdded { id: LayerId },
     LayerRemoved { id: LayerId },
@@ -24,6 +29,7 @@ pub enum LayersEvent {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ToolParamsEvent {
     ParamsChanged { params: serde_json::Value },
     Applied { name: String },
@@ -31,6 +37,7 @@ pub enum ToolParamsEvent {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum HistoryEvent {
     EntryAdded { name: String, description: String },
     Undone { name: String },

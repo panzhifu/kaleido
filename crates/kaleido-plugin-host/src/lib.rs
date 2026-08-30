@@ -15,7 +15,7 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
-use kaleido_core::{Image, ImageResult};
+use kaleido_core::{ImageResult, TiledImage};
 use kaleido_traits::{ParamSchema, Tool, ToolParams, ToolSchema};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -162,7 +162,7 @@ pub struct DynamicTool {
     menu_path: String,
     description: String,
     schema: ToolSchema,
-    apply_fn: Box<dyn Fn(&mut Image, &ToolParams) -> ImageResult<()> + Send + Sync>,
+    apply_fn: Box<dyn Fn(&mut TiledImage, &ToolParams) -> ImageResult<()> + Send + Sync>,
 }
 
 impl DynamicTool {
@@ -172,7 +172,7 @@ impl DynamicTool {
         menu_path: impl Into<String>,
         description: impl Into<String>,
         schema: ToolSchema,
-        apply_fn: impl Fn(&mut Image, &ToolParams) -> ImageResult<()> + Send + Sync + 'static,
+        apply_fn: impl Fn(&mut TiledImage, &ToolParams) -> ImageResult<()> + Send + Sync + 'static,
     ) -> Self {
         Self {
             name: name.into(),
@@ -197,7 +197,7 @@ impl Tool for DynamicTool {
         self.description.clone()
     }
 
-    fn apply(&self, image: &mut Image, params: &ToolParams) -> ImageResult<()> {
+    fn apply(&self, image: &mut TiledImage, params: &ToolParams) -> ImageResult<()> {
         (self.apply_fn)(image, params)
     }
 
@@ -332,7 +332,7 @@ impl AIToolGenerator {
     /// The `apply_fn` closure implements the tool's behavior.
     pub fn create_tool(
         description: &serde_json::Value,
-        apply_fn: impl Fn(&mut Image, &ToolParams) -> ImageResult<()> + Send + Sync + 'static,
+        apply_fn: impl Fn(&mut TiledImage, &ToolParams) -> ImageResult<()> + Send + Sync + 'static,
     ) -> Result<DynamicTool> {
         let name = description["name"]
             .as_str()
@@ -405,7 +405,7 @@ impl AIToolGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaleido_core::{Pixel, PixelFormat};
+    use kaleido_core::{Pixel, PixelFormat, TiledImage};
     use serde_json::json;
 
     #[test]
@@ -424,9 +424,9 @@ mod tests {
         assert_eq!(tool.name(), "test");
         assert_eq!(tool.menu_path(), "Test");
 
-        let mut image = Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
+        let mut image = TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
         tool.apply(&mut image, &json!({})).unwrap();
-        assert_eq!(image.get_pixel(0, 0).unwrap(), Pixel::rgb(0, 255, 0));
+        assert_eq!(image.get_pixel(0, 0), Pixel::rgb(0, 255, 0));
     }
 
     #[test]

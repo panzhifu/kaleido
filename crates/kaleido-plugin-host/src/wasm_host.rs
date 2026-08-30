@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{Context as _, Result};
 use cordis::Context;
-use kaleido_core::{Image, ImageError, ImageResult};
+use kaleido_core::{ImageError, ImageResult, TiledImage};
 use kaleido_traits::{Tool, ToolParams, ToolRegistry, ToolSchema};
 use cordis::Service;
 use tracing::{debug, info};
@@ -288,7 +288,7 @@ impl Tool for WasmTool {
         self.schema.clone()
     }
 
-    fn apply(&self, image: &mut Image, params: &ToolParams) -> ImageResult<()> {
+    fn apply(&self, image: &mut TiledImage, params: &ToolParams) -> ImageResult<()> {
         let width = image.width();
         let height = image.height();
         let pixels = image.to_rgba_vec();
@@ -374,7 +374,7 @@ impl Tool for WasmTool {
 
         // 6. Update the image with modified pixels.
         *image =
-            Image::from_rgba(width, height, modified).map_err(|e| ImageError::OperationFailed {
+            TiledImage::from_rgba(width, height, modified).map_err(|e| ImageError::OperationFailed {
                 reason: e.to_string(),
             })?;
 

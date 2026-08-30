@@ -1,6 +1,6 @@
 //! Layer state management.
 
-use kaleido_services::layer::{Layer, LayerId, LayerStack};
+use kaleido_services::layer::{LayerId, LayerStack};
 
 #[derive(Debug)]
 pub struct LayersState {

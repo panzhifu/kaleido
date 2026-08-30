@@ -188,7 +188,7 @@ impl AsyncImageLoader {
         // Downsample to max 512px on the longest side.
         let max_dim = image.width().max(image.height());
         if max_dim <= 512 {
-            return TiledImage::from_packed(&image);
+            return Ok(image);
         }
 
         let scale = 512.0 / max_dim as f32;
@@ -203,11 +203,10 @@ impl AsyncImageLoader {
             for x in 0..new_width {
                 let src_x = (x as f32 / scale) as u32;
                 let src_y = (y as f32 / scale) as u32;
-                let src_px = image
-                    .get_pixel(src_x.min(image.width() - 1), src_y.min(image.height() - 1))
-                    .map_err(|e| kaleido_core::ImageError::OperationFailed {
-                        reason: format!("Preview downsample failed: {}", e),
-                    })?;
+                let src_px = image.get_pixel(
+                    src_x.min(image.width() - 1),
+                    src_y.min(image.height() - 1),
+                );
                 let dst_off = (y as usize * new_width as usize + x as usize) * 4;
                 preview_data[dst_off] = src_px.r;
                 preview_data[dst_off + 1] = src_px.g;
@@ -216,12 +215,7 @@ impl AsyncImageLoader {
             }
         }
 
-        let preview_image = kaleido_core::Image::from_rgba(new_width, new_height, preview_data)
-            .map_err(|e| kaleido_core::ImageError::OperationFailed {
-                reason: format!("Preview creation failed: {}", e),
-            })?;
-
-        TiledImage::from_packed(&preview_image)
+        TiledImage::from_rgba(new_width, new_height, preview_data)
     }
 
     /// Loads the full-resolution image.
@@ -229,8 +223,7 @@ impl AsyncImageLoader {
         registry: &Arc<dyn FileCodecRegistry>,
         path: &Path,
     ) -> ImageResult<TiledImage> {
-        let image = registry.load(path)?;
-        TiledImage::from_packed(&image)
+        registry.load(path)
     }
 
     /// Returns the current state of a load request.
@@ -303,8 +296,7 @@ impl BackgroundSaver {
         format: kaleido_traits::ImageFormat,
         registry: &Arc<dyn FileCodecRegistry>,
     ) -> ImageResult<()> {
-        let packed = image.to_packed()?;
-        registry.save_with_format(path, &packed, format)
+        registry.save_with_format(path, image, format)
     }
 }
 

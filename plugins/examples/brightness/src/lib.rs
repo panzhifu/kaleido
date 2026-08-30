@@ -7,7 +7,7 @@
 //! - unregisters (and drops its strong `Arc`) when the fiber is disposed
 
 use cordis::{Inject, PluginHandle, PluginOutput, plugin_sync};
-use kaleido_core::{Image, ImageResult, Pixel};
+use kaleido_core::{ImageResult, Pixel, TiledImage};
 use kaleido_traits::{NumericConstraints, ParamSchema, ParamType, Tool, ToolParams, ToolRegistry};
 use std::sync::Arc;
 
@@ -57,7 +57,7 @@ impl Tool for BrightnessTool {
         "Adjust image brightness (-255..255)".into()
     }
 
-    fn apply(&self, image: &mut Image, params: &ToolParams) -> ImageResult<()> {
+    fn apply(&self, image: &mut TiledImage, params: &ToolParams) -> ImageResult<()> {
         let value = params
             .get("value")
             .and_then(|v| v.as_i64())
@@ -66,9 +66,9 @@ impl Tool for BrightnessTool {
 
         for y in 0..image.height() {
             for x in 0..image.width() {
-                let p = image.get_pixel(x, y)?;
+                let p = image.get_pixel(x, y);
                 let adjust = |v: u8| (v as i32 + value).clamp(0, 255) as u8;
-                image.set_pixel(x, y, Pixel::new(adjust(p.r), adjust(p.g), adjust(p.b), p.a))?;
+                image.set_pixel(x, y, Pixel::new(adjust(p.r), adjust(p.g), adjust(p.b), p.a));
             }
         }
         Ok(())
@@ -123,37 +123,37 @@ pub fn brightness_tool_plugin() -> PluginHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaleido_core::{Image, PixelFormat};
+    use kaleido_core::{PixelFormat, TiledImage};
     use serde_json::json;
 
     #[test]
     fn test_apply_brightness() {
         let tool = BrightnessTool::new(0);
         let mut image =
-            Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
+            TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
 
         tool.apply(&mut image, &json!({ "value": 50 })).unwrap();
-        assert_eq!(image.get_pixel(0, 0).unwrap(), Pixel::rgb(150, 150, 150));
+        assert_eq!(image.get_pixel(0, 0), Pixel::rgb(150, 150, 150));
 
         tool.apply(&mut image, &json!({ "value": -200 })).unwrap();
-        assert_eq!(image.get_pixel(0, 0).unwrap(), Pixel::rgb(0, 0, 0));
+        assert_eq!(image.get_pixel(0, 0), Pixel::rgb(0, 0, 0));
     }
 
     #[test]
     fn test_clamps_at_255() {
         let tool = BrightnessTool::new(0);
-        let mut image = Image::with_color(1, 1, PixelFormat::Rgba8, Pixel::rgb(200, 0, 0)).unwrap();
+        let mut image = TiledImage::with_color(1, 1, PixelFormat::Rgba8, Pixel::rgb(200, 0, 0)).unwrap();
         tool.apply(&mut image, &json!({ "value": 100 })).unwrap();
-        assert_eq!(image.get_pixel(0, 0).unwrap(), Pixel::rgb(255, 100, 100));
+        assert_eq!(image.get_pixel(0, 0), Pixel::rgb(255, 100, 100));
     }
 
     #[test]
     fn test_uses_default_when_params_missing() {
         let tool = BrightnessTool::new(10);
         let mut image =
-            Image::with_color(1, 1, PixelFormat::Rgba8, Pixel::rgb(10, 10, 10)).unwrap();
+            TiledImage::with_color(1, 1, PixelFormat::Rgba8, Pixel::rgb(10, 10, 10)).unwrap();
         tool.apply(&mut image, &json!({})).unwrap();
-        assert_eq!(image.get_pixel(0, 0).unwrap(), Pixel::rgb(20, 20, 20));
+        assert_eq!(image.get_pixel(0, 0), Pixel::rgb(20, 20, 20));
     }
 
     #[test]

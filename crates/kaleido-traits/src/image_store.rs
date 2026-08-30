@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use kaleido_core::{Image, ImageMetadata, ImageResult, PixelFormat};
+use kaleido_core::{ImageMetadata, ImageResult, PixelFormat, TiledImage};
 
 // ---------------------------------------------------------------------------
 // ImageStore trait
@@ -65,8 +65,8 @@ pub trait ImageStore: Send + Sync + 'static {
     ///
     /// Returns `Ok(None)` if no image is loaded.
     ///
-    /// Cloning is cheap due to `Arc<Vec<u8>>` inside [`Image`].
-    fn get_image(&self) -> ImageResult<Option<Image>>;
+    /// Cloning is cheap due to `Arc<Vec<u8>>` inside each tile.
+    fn get_image(&self) -> ImageResult<Option<TiledImage>>;
 
     /// Returns the dimensions of the current image, or `None` if not loaded.
     fn get_dimensions(&self) -> Option<(u32, u32)>;
@@ -98,7 +98,7 @@ pub trait ImageStore: Send + Sync + 'static {
     /// any error returned by the closure.
     fn apply_mutation(
         &self,
-        mutator: Box<dyn FnOnce(&mut Image) -> ImageResult<()>>,
+        mutator: Box<dyn FnOnce(&mut TiledImage) -> ImageResult<()>>,
     ) -> ImageResult<()>;
 
     /// Replaces the current image with a new one.
@@ -108,7 +108,7 @@ pub trait ImageStore: Send + Sync + 'static {
     /// # Events
     ///
     /// Emits `image_changed` on success.
-    fn set_image(&self, image: Image) -> ImageResult<()>;
+    fn set_image(&self, image: TiledImage) -> ImageResult<()>;
 
     // ─── State query ───
 
@@ -117,7 +117,7 @@ pub trait ImageStore: Send + Sync + 'static {
     /// Returns `Ok(None)` if no image is loaded.
     ///
     /// Used by `HistoryKeeper` to save historical states.
-    fn snapshot(&self) -> ImageResult<Option<Image>>;
+    fn snapshot(&self) -> ImageResult<Option<TiledImage>>;
 
     // ─── Undo support ───
 
@@ -129,7 +129,7 @@ pub trait ImageStore: Send + Sync + 'static {
     /// # Events
     ///
     /// Emits `image_changed` on success.
-    fn restore_state(&self, image: Image) -> ImageResult<()>;
+    fn restore_state(&self, image: TiledImage) -> ImageResult<()>;
 
     // ─── Utility ───
 

@@ -29,7 +29,7 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use cordis::Service;
-use kaleido_core::{Image, ImageMetadata, ImageResult};
+use kaleido_core::{ImageMetadata, ImageResult, TiledImage};
 use kaleido_traits::{FileCodec, ImageFormat};
 
 // ---------------------------------------------------------------------------
@@ -72,12 +72,13 @@ pub trait FormatCodec: Send + Sync + 'static {
     /// Loads an image from the given path.
     ///
     /// Only called if `capability().can_read` is true.
-    fn load(&self, path: &Path) -> ImageResult<Image>;
+    fn load(&self, path: &Path) -> ImageResult<TiledImage>;
 
     /// Saves an image to the given path.
     ///
     /// Only called if `capability().can_write` is true.
-    fn save(&self, path: &Path, image: &Image) -> ImageResult<()>;
+    fn save(&self, path: &Path, image: &TiledImage) -> ImageResult<()>;
+
 
     /// Reads metadata without loading full pixel data.
     ///
@@ -125,13 +126,14 @@ pub trait FileCodecRegistry: Send + Sync + 'static {
     fn can_write(&self, extension: &str) -> bool;
 
     /// Loads an image from the given path, auto-detecting the format.
-    fn load(&self, path: &Path) -> ImageResult<Image>;
+    fn load(&self, path: &Path) -> ImageResult<TiledImage>;
 
     /// Saves an image to the given path, inferring the format from the extension.
-    fn save(&self, path: &Path, image: &Image) -> ImageResult<()>;
+    fn save(&self, path: &Path, image: &TiledImage) -> ImageResult<()>;
 
     /// Saves an image to the given path with an explicit format.
-    fn save_with_format(&self, path: &Path, image: &Image, format: ImageFormat) -> ImageResult<()>;
+    fn save_with_format(&self, path: &Path, image: &TiledImage, format: ImageFormat) -> ImageResult<()>;
+
 
     /// Reads metadata without loading full pixel data.
     fn read_metadata(&self, path: &Path) -> ImageResult<ImageMetadata>;
@@ -239,7 +241,7 @@ impl FileCodecRegistry for FileCodecRegistryImpl {
             .unwrap_or(false)
     }
 
-    fn load(&self, path: &Path) -> ImageResult<Image> {
+    fn load(&self, path: &Path) -> ImageResult<TiledImage> {
         let format = match path.extension().and_then(|e| e.to_str()) {
             Some(ext) => match ImageFormat::from_extension(ext) {
                 Some(fmt) => fmt,
@@ -271,7 +273,7 @@ impl FileCodecRegistry for FileCodecRegistryImpl {
         codec.load(path)
     }
 
-    fn save(&self, path: &Path, image: &Image) -> ImageResult<()> {
+    fn save(&self, path: &Path, image: &TiledImage) -> ImageResult<()> {
         let format = match path.extension().and_then(|e| e.to_str()) {
             Some(ext) => match ImageFormat::from_extension(ext) {
                 Some(fmt) => fmt,
@@ -291,7 +293,7 @@ impl FileCodecRegistry for FileCodecRegistryImpl {
         self.save_with_format(path, image, format)
     }
 
-    fn save_with_format(&self, path: &Path, image: &Image, format: ImageFormat) -> ImageResult<()> {
+    fn save_with_format(&self, path: &Path, image: &TiledImage, format: ImageFormat) -> ImageResult<()> {
         let codec =
             self.get_codec(format)
                 .ok_or_else(|| kaleido_core::ImageError::UnsupportedFormat {
@@ -390,12 +392,12 @@ impl FormatCodec for BuiltInCodec {
         }
     }
 
-    fn load(&self, path: &Path) -> ImageResult<Image> {
+    fn load(&self, path: &Path) -> ImageResult<TiledImage> {
         use crate::file_codec_impl::FileCodecImpl;
         FileCodecImpl::new().load(path)
     }
 
-    fn save(&self, path: &Path, image: &Image) -> ImageResult<()> {
+    fn save(&self, path: &Path, image: &TiledImage) -> ImageResult<()> {
         use crate::file_codec_impl::FileCodecImpl;
         FileCodecImpl::new().save_with_format(path, image, self.format)
     }
@@ -441,11 +443,11 @@ mod tests {
             self.capability.clone()
         }
 
-        fn load(&self, _path: &Path) -> ImageResult<Image> {
-            Ok(Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap())
+        fn load(&self, _path: &Path) -> ImageResult<TiledImage> {
+            Ok(TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap())
         }
 
-        fn save(&self, _path: &Path, _image: &Image) -> ImageResult<()> {
+        fn save(&self, _path: &Path, _image: &TiledImage) -> ImageResult<()> {
             Ok(())
         }
 

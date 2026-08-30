@@ -1,7 +1,7 @@
 //! Kaleido desktop application entry point.
 
 use anyhow::Result;
-use gpui::{App, AppContext, Bounds, Window, WindowBounds, WindowOptions, px, size};
+use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use gpui_platform::application;
 
 mod app;

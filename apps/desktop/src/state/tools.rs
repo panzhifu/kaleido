@@ -1,9 +1,7 @@
 //! Tool state management.
 
-use std::sync::Arc;
-use kaleido_traits::Tool;
-
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ToolsState {
     pub active_tool: Option<String>,
     pub params: serde_json::Value,
@@ -24,6 +22,7 @@ impl ToolsState {
         self.params = serde_json::json!({});
     }
 
+    #[allow(dead_code)]
     pub fn set_params(&mut self, params: serde_json::Value) {
         self.params = params;
     }

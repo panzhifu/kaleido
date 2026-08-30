@@ -4,10 +4,8 @@
 //! operation, not the entire image.  This makes undo/redo memory usage
 //! proportional to the modified region rather than the full image size.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 
-use kaleido_core::{ImageResult, Tile, TileCoord, TiledImage};
+use kaleido_core::{ImageResult, TileCoord, TiledImage};
 use kaleido_traits::Command;
 
 // ---------------------------------------------------------------------------
@@ -72,6 +70,48 @@ impl TileSnapshotCommand {
         }
     }
 
+    /// Creates a [`TileSnapshotCommand`] by diffing two images.
+    ///
+    /// Compares `before` and `after` tile-by-tile and stores only the
+    /// tiles whose data changed.  This is the primary way to record an
+    /// operation for undo/redo.
+    pub fn from_diff(
+        before: &TiledImage,
+        after: &TiledImage,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
+        let mut snapshots = Vec::new();
+
+        // Collect all tile coordinates present in either image.
+        let mut all_coords: Vec<TileCoord> = before.tile_coords().collect();
+        for coord in after.tile_coords() {
+            if !all_coords.contains(&coord) {
+                all_coords.push(coord);
+            }
+        }
+
+        for coord in all_coords {
+            let before_data = before
+                .get_tile(coord.col, coord.row)
+                .map(|t| t.data().to_vec());
+            let after_data = after
+                .get_tile(coord.col, coord.row)
+                .map(|t| t.data().to_vec());
+
+            // Only store if the tile changed.
+            if before_data != after_data {
+                snapshots.push(TileSnapshot::new(
+                    coord,
+                    before_data.unwrap_or_default(),
+                    after_data.unwrap_or_default(),
+                ));
+            }
+        }
+
+        Self::new(snapshots, name, description)
+    }
+
     /// Captures the tiles that will be modified by an operation.
     ///
     /// This should be called BEFORE applying the mutation.  It reads the
@@ -122,13 +162,13 @@ impl TileSnapshotCommand {
 }
 
 impl Command for TileSnapshotCommand {
-    fn execute(&self, image: &kaleido_core::Image) -> ImageResult<kaleido_core::Image> {
+    fn execute(&self, image: &TiledImage) -> ImageResult<TiledImage> {
         // TileSnapshotCommand is a marker; the actual execution is
         // handled by the caller via apply_after.
         Ok(image.clone())
     }
 
-    fn undo(&self, image: &kaleido_core::Image) -> ImageResult<kaleido_core::Image> {
+    fn undo(&self, image: &TiledImage) -> ImageResult<TiledImage> {
         Ok(image.clone())
     }
 
@@ -138,6 +178,14 @@ impl Command for TileSnapshotCommand {
 
     fn description(&self) -> String {
         self.description.clone()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
     }
 }
 
@@ -175,7 +223,6 @@ impl TileSnapshotCommand {
 
 /// History keeper that uses dirty-tile snapshots.
 ///
-/// This is an alternative to the full-image `SnapshotCommand` approach.
 /// It stores only the tiles that were modified, making it much more
 /// memory-efficient for large images with localized edits.
 pub struct TileHistoryKeeper {
@@ -291,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_tile_snapshot_command() {
-        let mut image = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255));
+        let mut image = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255)).unwrap();
 
         // Capture before state.
         let coords = vec![TileCoord::new(0, 0)];
@@ -311,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_tile_history_undo_redo() {
-        let mut image = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255));
+        let mut image = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255)).unwrap();
         let mut history = TileHistoryKeeper::new(10);
 
         // Capture and modify.
@@ -353,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_tile_history_memory_usage() {
-        let mut image = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255));
+        let mut image = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(100, 100, 100, 255)).unwrap();
         let mut history = TileHistoryKeeper::new(10);
 
         let coords = vec![TileCoord::new(0, 0)];

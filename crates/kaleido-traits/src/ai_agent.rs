@@ -25,8 +25,6 @@
 //! foundation for future LLM integration — the trait interface stays
 //! the same, only the planning strategy changes.
 
-use std::sync::Arc;
-
 use serde::{Deserialize, Serialize};
 
 use crate::ToolParams;
@@ -112,6 +110,7 @@ pub struct PlanResult {
     /// Results for each action.
     pub action_results: Vec<ActionResult>,
     /// Whether the entire plan succeeded.
+    #[allow(dead_code)]
     pub success: bool,
 }
 

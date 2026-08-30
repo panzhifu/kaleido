@@ -142,7 +142,7 @@ pub fn ai_agent_plugin() -> PluginHandle {
         Inject::new(["image_store"]),
         |ctx, _config| {
             let image_store = ctx.require::<crate::ImageStoreImpl>("image_store")?;
-            let tool_registry = resolve_tool_registry(&ctx)?;;
+            let tool_registry = resolve_tool_registry(&ctx)?;
             Ok(crate::AIAgentImpl::new(
                 tool_registry,
                 image_store,
@@ -160,7 +160,7 @@ pub fn ai_agent_plugin() -> PluginHandle {
 mod tests {
     use super::*;
     use cordis::Context;
-    use kaleido_core::{Image, Pixel, PixelFormat};
+    use kaleido_core::{Pixel, PixelFormat, TiledImage};
     use kaleido_traits::{HistoryKeeper, IMAGE_CHANGED, ImageFormat, ImageStore};
 
     /// Installs all service plugins and returns the context.
@@ -238,15 +238,16 @@ mod tests {
         let keeper = ctx.require::<HistoryKeeperImpl>("history_keeper").unwrap();
         // Verify the configured max_steps was applied by pushing 5 commands.
         let store = ctx.require::<ImageStoreImpl>("image_store").unwrap();
-        let img1 = Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
+        let img1 = TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
         store.set_image(img1.clone()).unwrap();
 
         for i in 0..5 {
             let after =
-                Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(i * 50, 0, 0)).unwrap();
+                TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(i * 50, 0, 0)).unwrap();
             let before = store.get_image().unwrap().unwrap();
-            let cmd = crate::SnapshotCommand::new(before, after, format!("Op {i}"), "Test");
+            let cmd = crate::tile_history::TileSnapshotCommand::from_diff(&before, &after, format!("Op {i}"), "Test");
             keeper.push(Box::new(cmd)).unwrap();
+            store.set_image(after).unwrap();
         }
 
         assert_eq!(keeper.current_index(), 3);
@@ -261,7 +262,7 @@ mod tests {
         let keeper = ctx.require::<HistoryKeeperImpl>("history_keeper").unwrap();
 
         // Create an image and set it in the store.
-        let img1 = Image::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap();
+        let img1 = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap();
         store.set_image(img1.clone()).unwrap();
 
         assert!(store.has_image());
@@ -270,8 +271,8 @@ mod tests {
         assert_eq!(retrieved.height(), 4);
 
         // Push a history command.
-        let img2 = Image::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(0, 255, 0)).unwrap();
-        let cmd = crate::SnapshotCommand::new(img1, img2, "Test", "Test operation");
+        let img2 = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(0, 255, 0)).unwrap();
+        let cmd = crate::tile_history::TileSnapshotCommand::from_diff(&img1, &img2, "Test", "Test operation");
         keeper.push(Box::new(cmd)).unwrap();
 
         assert!(keeper.can_undo());
@@ -290,11 +291,11 @@ mod tests {
         // Can also use as trait object.
         let store: Arc<dyn ImageStore> = ctx.require::<ImageStoreImpl>("image_store").unwrap();
 
-        let img = Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
+        let img = TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
         store.set_image(img).unwrap();
 
         let retrieved = store.get_image().unwrap().unwrap();
-        let pixel = retrieved.get_pixel(0, 0).unwrap();
+        let pixel = retrieved.get_pixel(0, 0);
         assert_eq!(pixel.r, 100);
     }
 
@@ -311,7 +312,7 @@ mod tests {
         });
 
         let store = ctx.require::<ImageStoreImpl>("image_store").unwrap();
-        let img = Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(1, 2, 3)).unwrap();
+        let img = TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(1, 2, 3)).unwrap();
         store.set_image(img).unwrap();
 
         // Synchronous dispatch: the listener has already run.
@@ -325,11 +326,11 @@ mod tests {
         let store = ctx.require::<ImageStoreImpl>("image_store").unwrap();
         let keeper = ctx.require::<HistoryKeeperImpl>("history_keeper").unwrap();
 
-        let img1 = Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
+        let img1 = TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
         store.set_image(img1.clone()).unwrap();
 
-        let img2 = Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(255, 255, 255)).unwrap();
-        let cmd = crate::SnapshotCommand::new(img1, img2, "Brightness", "Adjust brightness");
+        let img2 = TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(255, 255, 255)).unwrap();
+        let cmd = crate::tile_history::TileSnapshotCommand::from_diff(&img1, &img2, "Brightness", "Adjust brightness");
         keeper.push(Box::new(cmd)).unwrap();
 
         let list = keeper.history_list();

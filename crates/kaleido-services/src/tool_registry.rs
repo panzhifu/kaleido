@@ -81,7 +81,7 @@ pub fn tool_registry_plugin() -> PluginHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaleido_core::{Image, ImageResult, Pixel};
+    use kaleido_core::{ImageResult, Pixel, TiledImage};
 
     /// A trivial test tool that fills the image red.
     struct RedFill;
@@ -96,7 +96,7 @@ mod tests {
         fn description(&self) -> String {
             "fill red".into()
         }
-        fn apply(&self, image: &mut Image, _params: &kaleido_traits::ToolParams) -> ImageResult<()> {
+        fn apply(&self, image: &mut TiledImage, _params: &kaleido_traits::ToolParams) -> ImageResult<()> {
             image.fill(Pixel::rgb(255, 0, 0));
             Ok(())
         }

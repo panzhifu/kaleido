@@ -10,9 +10,10 @@ use std::sync::Arc;
 
 use cordis::{Context, Result};
 use kaleido_plugin_host::WasmPluginManager;
-use kaleido_traits::{AIAgent, FileCodec, HistoryKeeper, ImageStore, Tool, ToolRegistry};
+use kaleido_traits::{FileCodec, HistoryKeeper, ImageStore, Tool, ToolRegistry};
 
 use crate::AIAgentImpl;
+#[allow(unused_imports)]
 use crate::FileCodecRegistry;
 use crate::cordis_plugins::{
     HistoryConfig, ai_agent_plugin, file_codec_plugin, file_codec_registry_plugin,
@@ -198,7 +199,7 @@ impl KaleidoApp {
         &self,
         description: &serde_json::Value,
         apply_fn: impl Fn(
-            &mut kaleido_core::Image,
+            &mut kaleido_core::TiledImage,
             &kaleido_traits::ToolParams,
         ) -> kaleido_core::ImageResult<()>
         + Send
@@ -246,8 +247,8 @@ impl KaleidoApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SnapshotCommand;
-    use kaleido_core::{Image, Pixel, PixelFormat};
+    use crate::tile_history::TileSnapshotCommand;
+    use kaleido_core::{Pixel, PixelFormat, TiledImage};
 
     #[test]
     fn test_boot_resolves_all_services() {
@@ -280,21 +281,16 @@ mod tests {
         let store = app.image_store();
         let keeper = app.history_keeper();
 
-        let img = Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
+        let img = TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
         store.set_image(img.clone()).unwrap();
 
         for i in 0..4 {
             let after =
-                Image::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(i * 60, 0, 0)).unwrap();
+                TiledImage::with_color(2, 2, PixelFormat::Rgba8, Pixel::rgb(i * 60, 0, 0)).unwrap();
             let before = store.get_image().unwrap().unwrap();
-            keeper
-                .push(Box::new(SnapshotCommand::new(
-                    before,
-                    after,
-                    format!("Op {i}"),
-                    "Test op",
-                )))
-                .unwrap();
+            let cmd = TileSnapshotCommand::from_diff(&before, &after, format!("Op {i}"), "Test op");
+            keeper.push(Box::new(cmd)).unwrap();
+            store.set_image(after).unwrap();
         }
 
         assert_eq!(keeper.current_index(), 2);
@@ -308,40 +304,22 @@ mod tests {
         let store = app.image_store();
         let keeper = app.history_keeper();
 
-        let red = Image::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap();
+        let red = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap();
         store.set_image(red.clone()).unwrap();
 
-        let green = Image::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(0, 255, 0)).unwrap();
-        keeper
-            .push(Box::new(SnapshotCommand::new(
-                red,
-                green,
-                "Demo",
-                "red -> green",
-            )))
-            .unwrap();
+        let green = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(0, 255, 0)).unwrap();
+        let cmd = TileSnapshotCommand::from_diff(&red, &green, "Demo", "red -> green");
+        keeper.push(Box::new(cmd)).unwrap();
 
         keeper.undo().unwrap();
         assert_eq!(
-            store
-                .get_image()
-                .unwrap()
-                .unwrap()
-                .get_pixel(0, 0)
-                .unwrap()
-                .r,
+            store.get_image().unwrap().unwrap().get_pixel(0, 0).r,
             255
         );
 
         keeper.redo().unwrap();
         assert_eq!(
-            store
-                .get_image()
-                .unwrap()
-                .unwrap()
-                .get_pixel(0, 0)
-                .unwrap()
-                .g,
+            store.get_image().unwrap().unwrap().get_pixel(0, 0).g,
             255
         );
     }

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use cordis::Service;
 use image::{DynamicImage, ImageBuffer, Rgba};
-use kaleido_core::{Image, ImageMetadata, ImageResult};
+use kaleido_core::{ImageMetadata, ImageResult, TiledImage};
 use kaleido_traits::{FileCodec, ImageFormat};
 
 /// Default implementation of the [`FileCodec`] trait.
@@ -20,17 +20,17 @@ impl FileCodecImpl {
         Self
     }
 
-    /// Converts a [`DynamicImage`] from the `image` crate into a Kaleido [`Image`].
-    fn dynamic_to_image(dynamic: DynamicImage) -> ImageResult<Image> {
+    /// Converts a [`DynamicImage`] from the `image` crate into a [`TiledImage`].
+    fn dynamic_to_tiled(dynamic: DynamicImage) -> ImageResult<TiledImage> {
         let rgba = dynamic.to_rgba8();
         let (width, height) = rgba.dimensions();
         let data = rgba.into_raw();
 
-        Image::from_rgba(width, height, data)
+        TiledImage::from_rgba(width, height, data)
     }
 
-    /// Converts a Kaleido [`Image`] into an [`ImageBuffer`] for encoding.
-    fn image_to_buffer(image: &Image) -> ImageResult<ImageBuffer<Rgba<u8>, Vec<u8>>> {
+    /// Converts a [`TiledImage`] into an [`ImageBuffer`] for encoding.
+    fn tiled_to_buffer(image: &TiledImage) -> ImageResult<ImageBuffer<Rgba<u8>, Vec<u8>>> {
         let data = image.to_rgba_vec();
         let width = image.width();
         let height = image.height();
@@ -38,7 +38,7 @@ impl FileCodecImpl {
         ImageBuffer::from_raw(width, height, data).ok_or_else(|| {
             kaleido_core::ImageError::OperationFailed {
                 reason: format!(
-                    "image_to_buffer: failed to create ImageBuffer for {}x{} image",
+                    "tiled_to_buffer: failed to create ImageBuffer for {}x{} image",
                     width, height
                 ),
             }
@@ -53,7 +53,7 @@ impl Default for FileCodecImpl {
 }
 
 impl FileCodec for FileCodecImpl {
-    fn load(&self, path: &Path) -> ImageResult<Image> {
+    fn load(&self, path: &Path) -> ImageResult<TiledImage> {
         // Validate that the file has an extension we can recognize.
         match path.extension().and_then(|e| e.to_str()) {
             Some(ext) => {
@@ -74,10 +74,10 @@ impl FileCodec for FileCodecImpl {
             reason: format!("load: failed to decode {}: {}", path.display(), e),
         })?;
 
-        Self::dynamic_to_image(dynamic)
+        Self::dynamic_to_tiled(dynamic)
     }
 
-    fn save(&self, path: &Path, image: &Image) -> ImageResult<()> {
+    fn save(&self, path: &Path, image: &TiledImage) -> ImageResult<()> {
         let format = match path.extension().and_then(|e| e.to_str()) {
             Some(ext) => match ImageFormat::from_extension(ext) {
                 Some(fmt) => fmt,
@@ -97,14 +97,14 @@ impl FileCodec for FileCodecImpl {
         self.save_with_format(path, image, format)
     }
 
-    fn save_with_format(&self, path: &Path, image: &Image, format: ImageFormat) -> ImageResult<()> {
+    fn save_with_format(&self, path: &Path, image: &TiledImage, format: ImageFormat) -> ImageResult<()> {
         if !self.can_write(format.extension()) {
             return Err(kaleido_core::ImageError::UnsupportedFormat {
                 format: kaleido_core::PixelFormat::Rgba8,
             });
         }
 
-        let buffer = Self::image_to_buffer(image)?;
+        let buffer = Self::tiled_to_buffer(image)?;
 
         match format {
             ImageFormat::Jpeg => {
@@ -271,7 +271,7 @@ mod tests {
         let path = dir.join("test_save_and_load_png.png");
 
         // Create a test image with transparency.
-        let img = Image::with_color(
+        let img = TiledImage::with_color(
             10,
             10,
             PixelFormat::Rgba8,
@@ -299,7 +299,7 @@ mod tests {
         // Both .tif and .tiff extensions must work.
         let path = dir.join("test_save_and_load_tiff.tiff");
 
-        let img = Image::with_color(
+        let img = TiledImage::with_color(
             10,
             10,
             PixelFormat::Rgba8,
@@ -327,7 +327,7 @@ mod tests {
         let path = dir.join("test_save_and_load_jpeg.jpg");
 
         // Create a test image.
-        let img = Image::with_color(
+        let img = TiledImage::with_color(
             10,
             10,
             PixelFormat::Rgba8,
@@ -355,7 +355,7 @@ mod tests {
         let path = dir.join("test_save_and_load_webp.webp");
 
         // Create a test image.
-        let img = Image::with_color(
+        let img = TiledImage::with_color(
             10,
             10,
             PixelFormat::Rgba8,
@@ -389,7 +389,7 @@ mod tests {
         let _ = fs::create_dir_all(&dir);
         let path = dir.join("test_save_unsupported_format.bmp");
 
-        let img = Image::with_color(
+        let img = TiledImage::with_color(
             10,
             10,
             PixelFormat::Rgba8,
@@ -411,7 +411,7 @@ mod tests {
         let _ = fs::create_dir_all(&dir);
         let path = dir.join("test_save_with_format.png");
 
-        let img = Image::with_color(
+        let img = TiledImage::with_color(
             10,
             10,
             PixelFormat::Rgba8,
@@ -443,15 +443,14 @@ mod tests {
         let path = dir.join("test_roundtrip_png.png");
 
         // Create a test image with a gradient.
-        let mut img = Image::new(5, 5, PixelFormat::Rgba8).unwrap();
+        let mut img = TiledImage::new(5, 5, PixelFormat::Rgba8);
         for y in 0..5 {
             for x in 0..5 {
                 img.set_pixel(
                     x,
                     y,
                     kaleido_core::Pixel::new(x as u8 * 50, y as u8 * 50, 0, 255),
-                )
-                .unwrap();
+                );
             }
         }
 
@@ -465,8 +464,8 @@ mod tests {
         // Verify pixel values are preserved (PNG is lossless).
         for y in 0..5 {
             for x in 0..5 {
-                let original = img.get_pixel(x, y).unwrap();
-                let loaded_px = loaded.get_pixel(x, y).unwrap();
+                let original = img.get_pixel(x, y);
+                let loaded_px = loaded.get_pixel(x, y);
                 assert_eq!(original, loaded_px, "pixel ({}, {}) mismatch", x, y);
             }
         }
@@ -486,23 +485,23 @@ mod tests {
     }
 
     #[test]
-    fn test_dynamic_to_image() {
+    fn test_dynamic_to_tiled() {
         let dynamic = DynamicImage::new_rgba8(4, 4);
-        let img = FileCodecImpl::dynamic_to_image(dynamic).unwrap();
+        let img = FileCodecImpl::dynamic_to_tiled(dynamic).unwrap();
         assert_eq!(img.width(), 4);
         assert_eq!(img.height(), 4);
     }
 
     #[test]
-    fn test_image_to_buffer() {
-        let img = Image::with_color(
+    fn test_tiled_to_buffer() {
+        let img = TiledImage::with_color(
             4,
             4,
             PixelFormat::Rgba8,
             kaleido_core::Pixel::rgb(255, 0, 0),
         )
         .unwrap();
-        let buffer = FileCodecImpl::image_to_buffer(&img).unwrap();
+        let buffer = FileCodecImpl::tiled_to_buffer(&img).unwrap();
         assert_eq!(buffer.width(), 4);
         assert_eq!(buffer.height(), 4);
     }

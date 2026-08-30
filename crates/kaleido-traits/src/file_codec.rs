@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use kaleido_core::{Image, ImageMetadata, ImageResult};
+use kaleido_core::{ImageMetadata, ImageResult, TiledImage};
 
 // ---------------------------------------------------------------------------
 // ImageFormat
@@ -65,8 +65,8 @@ impl ImageFormat {
 /// File codec service — handles loading and saving images in various formats.
 ///
 /// This trait defines the contract for file I/O operations in Kaleido.
-/// Implementations are responsible for decoding image files into [`Image`]
-/// structures and encoding [`Image`] structures back to files.
+/// Implementations are responsible for decoding image files into [`TiledImage`]
+/// structures and encoding [`TiledImage`] structures back to files.
 ///
 /// # Design Principles
 ///
@@ -93,7 +93,7 @@ pub trait FileCodec: Send + Sync + 'static {
     ///
     /// Returns an error if the file doesn't exist, the format is unsupported,
     /// or the file contains invalid/corrupted data.
-    fn load(&self, path: &Path) -> ImageResult<Image>;
+    fn load(&self, path: &Path) -> ImageResult<TiledImage>;
 
     /// Saves an image to a file, inferring the format from the extension.
     ///
@@ -101,7 +101,7 @@ pub trait FileCodec: Send + Sync + 'static {
     ///
     /// Returns an error if the path is invalid, the format is unsupported,
     /// or the write operation fails.
-    fn save(&self, path: &Path, image: &Image) -> ImageResult<()>;
+    fn save(&self, path: &Path, image: &TiledImage) -> ImageResult<()>;
 
     /// Saves an image to a file with an explicit format.
     ///
@@ -111,7 +111,7 @@ pub trait FileCodec: Send + Sync + 'static {
     /// # Errors
     ///
     /// Same as [`save`](Self::save).
-    fn save_with_format(&self, path: &Path, image: &Image, format: ImageFormat) -> ImageResult<()>;
+    fn save_with_format(&self, path: &Path, image: &TiledImage, format: ImageFormat) -> ImageResult<()>;
 
     // --- Format information ---
 

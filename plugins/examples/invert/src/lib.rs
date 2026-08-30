@@ -1,7 +1,7 @@
 //! Invert tool plugin — negates all pixel colours.
 
 use cordis::{Inject, PluginHandle, PluginOutput, plugin_sync};
-use kaleido_core::{Image, ImageResult, Pixel};
+use kaleido_core::{ImageResult, Pixel, TiledImage};
 use kaleido_traits::{Tool, ToolParams, ToolRegistry};
 use std::sync::Arc;
 
@@ -25,11 +25,11 @@ impl Tool for InvertTool {
         "Invert all pixel colours (negative)".into()
     }
 
-    fn apply(&self, image: &mut Image, _params: &ToolParams) -> ImageResult<()> {
+    fn apply(&self, image: &mut TiledImage, _params: &ToolParams) -> ImageResult<()> {
         for y in 0..image.height() {
             for x in 0..image.width() {
-                let p = image.get_pixel(x, y)?;
-                image.set_pixel(x, y, Pixel::new(255 - p.r, 255 - p.g, 255 - p.b, p.a))?;
+                let p = image.get_pixel(x, y);
+                image.set_pixel(x, y, Pixel::new(255 - p.r, 255 - p.g, 255 - p.b, p.a));
             }
         }
         Ok(())
@@ -69,17 +69,17 @@ pub fn invert_tool_plugin() -> PluginHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaleido_core::{Image, PixelFormat};
+    use kaleido_core::{PixelFormat, TiledImage};
     use serde_json::json;
 
     #[test]
     fn test_apply_invert() {
         let tool = InvertTool;
         let mut image =
-            Image::with_color(1, 1, PixelFormat::Rgba8, Pixel::new(10, 20, 30, 128)).unwrap();
+            TiledImage::with_color(1, 1, PixelFormat::Rgba8, Pixel::new(10, 20, 30, 128)).unwrap();
         tool.apply(&mut image, &json!({})).unwrap();
         assert_eq!(
-            image.get_pixel(0, 0).unwrap(),
+            image.get_pixel(0, 0),
             Pixel::new(245, 235, 225, 128)
         );
     }

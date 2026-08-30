@@ -33,7 +33,7 @@ pub use kaleido_traits::{
 /// ```ignore
 /// use kaleido_sdk::ToolPlugin;
 /// use kaleido_traits::{Tool, ToolParams};
-/// use kaleido_core::{Image, ImageResult};
+/// use kaleido_core::{ImageResult, TiledImage};
 ///
 /// struct MyTool;
 ///
@@ -41,7 +41,7 @@ pub use kaleido_traits::{
 ///     fn name(&self) -> &str { "my_tool" }
 ///     fn menu_path(&self) -> String { "My/Tool".into() }
 ///     fn description(&self) -> String { "Does something".into() }
-///     fn apply(&self, image: &mut Image, params: &ToolParams) -> ImageResult<()> {
+///     fn apply(&self, image: &mut TiledImage, params: &ToolParams) -> ImageResult<()> {
 ///         // ...
 ///         Ok(())
 ///     }
@@ -155,7 +155,7 @@ macro_rules! define_tool {
 
             fn apply(
                 &self,
-                image: &kaleido_core::Image,
+                image: &kaleido_core::TiledImage,
                 params: &kaleido_traits::ToolParams,
             ) -> kaleido_core::ImageResult<()> {
                 let _ = image;
@@ -182,7 +182,7 @@ macro_rules! define_tool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaleido_core::{Image, ImageResult, Pixel};
+    use kaleido_core::{ImageResult, Pixel, TiledImage};
     use kaleido_traits::{ToolParams, ToolSchema};
     use serde_json::json;
 
@@ -201,7 +201,7 @@ mod tests {
             "A test tool".into()
         }
 
-        fn apply(&self, image: &mut Image, _params: &ToolParams) -> ImageResult<()> {
+        fn apply(&self, image: &mut TiledImage, _params: &ToolParams) -> ImageResult<()> {
             image.fill(Pixel::rgb(255, 0, 0));
             Ok(())
         }

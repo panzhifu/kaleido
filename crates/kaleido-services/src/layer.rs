@@ -10,8 +10,6 @@
 //! which holds an [`Op`] node.  The adjustment is applied during
 //! compositing without modifying the source pixels.
 
-use std::collections::HashMap;
-use std::sync::Arc;
 
 use kaleido_core::{ImageResult, Pixel, PixelFormat, TileCoord, TiledImage, TILE_SIZE};
 
@@ -331,6 +329,8 @@ pub struct Layer {
     pub locked: bool,
     /// Optional layer mask (grayscale image controlling visibility).
     pub mask: Option<TiledImage>,
+    /// Whether the mask is inverted (hidden areas become visible).
+    pub mask_inverted: bool,
 }
 
 impl Layer {
@@ -345,6 +345,7 @@ impl Layer {
             visible: true,
             locked: false,
             mask: None,
+            mask_inverted: false,
         }
     }
 
@@ -359,6 +360,7 @@ impl Layer {
             visible: true,
             locked: false,
             mask: None,
+            mask_inverted: false,
         }
     }
 
@@ -579,6 +581,7 @@ impl LayerStack {
 fn composite_layer(result: &mut TiledImage, layer_image: &TiledImage, layer: &Layer) {
     let opacity = layer.opacity;
     let blend_mode = layer.blend_mode;
+    let mask_inverted = layer.mask_inverted;
 
     // Iterate over the layer's tiles.
     for coord in layer_image.tile_coords() {
@@ -591,7 +594,15 @@ fn composite_layer(result: &mut TiledImage, layer_image: &TiledImage, layer: &La
         let result_tile = result.get_or_create_tile(coord.col, coord.row);
 
         // Blend each pixel.
-        blend_tile(result_tile, layer_tile, blend_mode, opacity, layer.mask.as_ref(), coord);
+        blend_tile(
+            result_tile,
+            layer_tile,
+            blend_mode,
+            opacity,
+            layer.mask.as_ref(),
+            mask_inverted,
+            coord,
+        );
     }
 }
 
@@ -602,6 +613,7 @@ fn blend_tile(
     mode: BlendMode,
     opacity: f32,
     mask: Option<&TiledImage>,
+    mask_inverted: bool,
     coord: TileCoord,
 ) {
     let result_data = result.data_mut();
@@ -630,9 +642,21 @@ fn blend_tile(
             match mask_img.get_tile(coord.col, coord.row) {
                 Some(mask_tile) => {
                     let mask_px = mask_tile.get_pixel(local_x, local_y);
-                    mask_px.luminance()
+                    let lum = mask_px.luminance();
+                    if mask_inverted {
+                        255 - lum
+                    } else {
+                        lum
+                    }
                 }
-                None => 255,
+                None => {
+                    // Outside mask bounds: if inverted, fully visible; else fully hidden
+                    if mask_inverted {
+                        255
+                    } else {
+                        0
+                    }
+                }
             }
         } else {
             255
@@ -719,6 +743,7 @@ mod tests {
             visible: true,
             locked: false,
             mask: None,
+            mask_inverted: false,
         };
         assert_eq!(layer.name, "Brightness");
     }
@@ -831,7 +856,7 @@ mod tests {
     #[test]
     fn test_layer_stack_composite_single_layer() {
         let mut stack = LayerStack::new(128, 128);
-        let image = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 0, 0, 255));
+        let image = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 0, 0, 255)).unwrap();
         let layer = Layer::new_pixels("Red", image);
         stack.add_layer(layer);
 
@@ -844,11 +869,11 @@ mod tests {
         let mut stack = LayerStack::new(128, 128);
 
         // Bottom: white.
-        let bottom = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 255, 255, 255));
+        let bottom = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 255, 255, 255)).unwrap();
         stack.add_layer(Layer::new_pixels("White", bottom));
 
         // Top: red, 50% opacity.
-        let top = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 0, 0, 255));
+        let top = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 0, 0, 255)).unwrap();
         let mut top_layer = Layer::new_pixels("Red", top);
         top_layer.opacity = 0.5;
         stack.add_layer(top_layer);
@@ -866,10 +891,10 @@ mod tests {
     fn test_layer_stack_composite_invisible_layer() {
         let mut stack = LayerStack::new(128, 128);
 
-        let bottom = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 255, 255, 255));
+        let bottom = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 255, 255, 255)).unwrap();
         stack.add_layer(Layer::new_pixels("White", bottom));
 
-        let top = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 0, 0, 255));
+        let top = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 0, 0, 255)).unwrap();
         let mut top_layer = Layer::new_pixels("Red", top);
         top_layer.visible = false;
         stack.add_layer(top_layer);
@@ -881,7 +906,7 @@ mod tests {
 
     #[test]
     fn test_layer_stack_with_background() {
-        let bg = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(0, 0, 255, 255));
+        let bg = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(0, 0, 255, 255)).unwrap();
         let stack = LayerStack::with_background(128, 128, bg);
         assert_eq!(stack.layer_count(), 1);
         assert_eq!(stack.background().unwrap().name, "Background");
@@ -890,7 +915,7 @@ mod tests {
     #[test]
     fn test_layer_stack_invalidate() {
         let mut stack = LayerStack::new(128, 128);
-        let image = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 0, 0, 255));
+        let image = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 0, 0, 255)).unwrap();
         stack.add_layer(Layer::new_pixels("Red", image));
 
         // First composite.
@@ -926,5 +951,57 @@ mod tests {
         let result = BlendMode::SoftLight.blend(src, dst);
         // Soft light with same values should be close to original.
         assert!((result.r as i16 - 128).abs() < 10);
+    }
+
+    #[test]
+    fn test_layer_mask_inverted() {
+        let mut stack = LayerStack::new(128, 128);
+
+        // Bottom: white.
+        let bottom = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 255, 255, 255)).unwrap();
+        stack.add_layer(Layer::new_pixels("White", bottom));
+
+        // Top: red, 100% opacity.
+        let top = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 0, 0, 255)).unwrap();
+        let mut top_layer = Layer::new_pixels("Red", top);
+
+        // Create a mask that is fully opaque (white) - so layer is fully visible.
+        let mask = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 255, 255, 255)).unwrap();
+        top_layer.mask = Some(mask);
+        stack.add_layer(top_layer);
+
+        // Without inversion: red fully visible.
+        let composite = stack.composite().unwrap();
+        assert_eq!(composite.get_pixel(64, 64).r, 255);
+        assert_eq!(composite.get_pixel(64, 64).g, 0);
+
+        // With inversion: red fully hidden (mask inverted).
+        stack.layer_mut(stack.layer_count() - 1).unwrap().mask_inverted = true;
+        stack.invalidate();
+        let composite = stack.composite().unwrap();
+        assert_eq!(composite.get_pixel(64, 64).r, 255); // White background
+        assert_eq!(composite.get_pixel(64, 64).g, 255);
+    }
+
+    #[test]
+    fn test_layer_mask_partial() {
+        let mut stack = LayerStack::new(128, 128);
+
+        // Bottom: black.
+        let bottom = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(0, 0, 0, 255)).unwrap();
+        stack.add_layer(Layer::new_pixels("Black", bottom));
+
+        // Top: red.
+        let top = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(255, 0, 0, 255)).unwrap();
+        let mut top_layer = Layer::new_pixels("Red", top);
+
+        // Create a mask that is 50% gray - so layer is 50% visible.
+        let mask = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::new(128, 128, 128, 255)).unwrap();
+        top_layer.mask = Some(mask);
+        stack.add_layer(top_layer);
+
+        let composite = stack.composite().unwrap();
+        // 50% red over black = 128
+        assert!(composite.get_pixel(64, 64).r > 120 && composite.get_pixel(64, 64).r < 135);
     }
 }

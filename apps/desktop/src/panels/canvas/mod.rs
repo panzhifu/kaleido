@@ -1,7 +1,6 @@
 //! Canvas panel - displays the image with viewport controls.
 
 use gpui::*;
-use gpui::prelude::*;
 use std::path::PathBuf;
 
 use crate::messages::CanvasEvent;
@@ -68,7 +67,7 @@ impl Focusable for CanvasPanel {
 }
 
 impl Render for CanvasPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .track_focus(&self.focus_handle)
             .size_full()

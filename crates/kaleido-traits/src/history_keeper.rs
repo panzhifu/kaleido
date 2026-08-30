@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use kaleido_core::{Image, ImageError, ImageResult};
+use kaleido_core::{ImageError, ImageResult, TiledImage};
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -10,22 +10,27 @@ use thiserror::Error;
 /// A reversible image operation.
 ///
 /// Each command stores enough information to apply (`execute`) and reverse
-/// (`undo`) an image mutation. In the MVP this is realised via full-image
-/// snapshots (`before` / `after`), but more sophisticated storage strategies
-/// (tile diffs, parameter replay) can be plugged in without changing the
-/// public API.
+/// (`undo`) an image mutation.  The standard implementation is
+/// [`crate::tile_history::TileSnapshotCommand`], which stores dirty-tile
+/// diffs for memory-efficient undo/redo.
 pub trait Command: Send + Sync + 'static {
     /// Produces the image **after** this command is applied.
-    fn execute(&self, image: &Image) -> ImageResult<Image>;
+    fn execute(&self, image: &TiledImage) -> ImageResult<TiledImage>;
 
     /// Produces the image **before** this command was applied.
-    fn undo(&self, image: &Image) -> ImageResult<Image>;
+    fn undo(&self, image: &TiledImage) -> ImageResult<TiledImage>;
 
     /// Short human-readable name for the history panel.
     fn name(&self) -> String;
 
     /// Longer description shown in tooltips, etc.
     fn description(&self) -> String;
+
+    /// Returns `self` as `&dyn Any` for downcasting.
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Consumes a `Box<dyn Command>` and returns `Box<dyn Any>` for owned downcasting.
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
 }
 
 // ---------------------------------------------------------------------------
@@ -33,9 +38,6 @@ pub trait Command: Send + Sync + 'static {
 // ---------------------------------------------------------------------------
 
 /// An entry in the undo/redo history list.
-///
-/// Created when a command is pushed onto the undo stack. The UI can render
-/// this directly in a history panel.
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
     /// Command name (e.g. "Brightness", "Crop").

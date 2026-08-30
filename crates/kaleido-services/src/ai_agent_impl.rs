@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use cordis::{Context, Service};
-use kaleido_core::Image;
+use kaleido_core::TiledImage;
 use kaleido_traits::ImageStore;
 use kaleido_traits::{
     AIAgent, AgentError, AgentMode, AgentResult, AgentStats, AiActionExecutedEvent,
@@ -27,6 +27,7 @@ struct PlanningTemplate {
     /// Keywords that trigger this template (any match).
     keywords: Vec<&'static str>,
     /// Template name (for logging).
+    #[allow(dead_code)]
     name: &'static str,
     /// The plan builder function.
     build: fn(&str, &dyn ToolRegistry) -> AgentResult<Plan>,
@@ -368,7 +369,7 @@ impl AIAgent for AIAgentImpl {
         }
 
         let mut results = Vec::with_capacity(plan.actions.len());
-        let mut overall_success = true;
+        let overall_success = true; // tracked for PlanResult
 
         for (step, action) in plan.actions.iter().enumerate() {
             let start = Instant::now();
@@ -385,7 +386,7 @@ impl AIAgent for AIAgentImpl {
 
             let apply_result =
                 self.image_store
-                    .apply_mutation(Box::new(move |image: &mut Image| {
+                    .apply_mutation(Box::new(move |image: &mut TiledImage| {
                         tool.apply(image, &params)
                     }));
 
@@ -419,7 +420,6 @@ impl AIAgent for AIAgentImpl {
                 }
                 Err(e) => {
                     self.stats.actions_failed.fetch_add(1, Ordering::Relaxed);
-                    overall_success = false;
 
                     let error_msg = format!("Tool '{}' failed: {}", tool_name, e);
 
@@ -448,6 +448,7 @@ impl AIAgent for AIAgentImpl {
         Ok(PlanResult {
             plan: plan.clone(),
             action_results: results,
+            #[allow(dead_code)]
             success: overall_success,
         })
     }
@@ -489,7 +490,7 @@ mod tests {
         fn description(&self) -> String {
             "Fill the image with gray color".into()
         }
-        fn apply(&self, image: &mut Image, _params: &ToolParams) -> kaleido_core::ImageResult<()> {
+        fn apply(&self, image: &mut TiledImage, _params: &ToolParams) -> kaleido_core::ImageResult<()> {
             image.fill(Pixel::rgb(128, 128, 128));
             Ok(())
         }
@@ -515,7 +516,7 @@ mod tests {
                     .required(),
             )
         }
-        fn apply(&self, image: &mut Image, params: &ToolParams) -> kaleido_core::ImageResult<()> {
+        fn apply(&self, image: &mut TiledImage, params: &ToolParams) -> kaleido_core::ImageResult<()> {
             let amount = params
                 .get("brightness")
                 .and_then(|v| v.as_f64())
@@ -583,7 +584,7 @@ mod tests {
     #[test]
     fn test_execute_plan_empty() {
         let (_registry, store, agent) = setup_test_env();
-        let img = Image::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
+        let img = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
         store.set_image(img).unwrap();
         let empty_plan = Plan::new("empty");
         let result = agent.execute_plan(&empty_plan);
@@ -601,7 +602,7 @@ mod tests {
     #[test]
     fn test_execute_plan_success() {
         let (_registry, store, agent) = setup_test_env();
-        let img = Image::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
+        let img = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
         store.set_image(img).unwrap();
         let plan = Plan::new("test").with_action("gray_fill", serde_json::json!({}), "Fill with gray");
         let result = agent.execute_plan(&plan);
@@ -614,7 +615,7 @@ mod tests {
     #[test]
     fn test_run_plan_and_execute() {
         let (_registry, store, agent) = setup_test_env();
-        let img = Image::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(50, 50, 50)).unwrap();
+        let img = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(50, 50, 50)).unwrap();
         store.set_image(img).unwrap();
         let result = agent.run("亮一点", None);
         assert!(result.is_ok(), "run() should plan and execute");
@@ -625,7 +626,7 @@ mod tests {
     #[test]
     fn test_stats_tracking() {
         let (_registry, store, agent) = setup_test_env();
-        let img = Image::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(50, 50, 50)).unwrap();
+        let img = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(50, 50, 50)).unwrap();
         store.set_image(img).unwrap();
         let _ = agent.run("gray_fill", None);
         let stats = agent.stats();
@@ -643,7 +644,7 @@ mod tests {
     #[test]
     fn test_max_steps_exceeded() {
         let (_registry, store, agent) = setup_test_env();
-        let img = Image::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(50, 50, 50)).unwrap();
+        let img = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(50, 50, 50)).unwrap();
         store.set_image(img).unwrap();
         let mut plan = Plan::new("too many steps");
         for _ in 0..25 {

@@ -1,5 +1,6 @@
 //! UI theme constants.
 
+#[allow(dead_code)]
 pub mod color {
     pub const BG_PRIMARY: u32 = 0x1a1a2e;
     pub const BG_SECONDARY: u32 = 0x16213e;

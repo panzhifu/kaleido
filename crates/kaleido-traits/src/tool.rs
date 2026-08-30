@@ -15,7 +15,7 @@
 
 use std::sync::{Arc, Weak};
 
-use kaleido_core::{Image, ImageResult};
+use kaleido_core::{ImageResult, TiledImage};
 use serde_json::Value;
 
 // ---------------------------------------------------------------------------
@@ -435,7 +435,7 @@ pub trait Tool: Send + Sync + 'static {
     ///
     /// The host is responsible for loading the image, recording history and
     /// saving — the tool only mutates pixel data.
-    fn apply(&self, image: &mut Image, params: &ToolParams) -> ImageResult<()>;
+    fn apply(&self, image: &mut TiledImage, params: &ToolParams) -> ImageResult<()>;
 
     /// Returns the parameter schema for this tool.
     ///
