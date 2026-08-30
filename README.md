@@ -23,19 +23,22 @@ Kaleido is an image editor under construction. Its architecture is deliberately 
 - **HistoryKeeper** — undo / redo with bounded snapshot-based commands (default 50 steps)
 - **TileHistoryKeeper** — **dirty-tile undo**: stores only modified tiles, memory ∝ modified region (not full image)
 - **ToolRegistry** — dynamic registry of tools provided by plugins
+- **InteractiveTool** — pointer-event stream contract for brush-like tools (`on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`); the **host** owns screen→image coordinate conversion, undo snapshots, and dirty-tile tracking — plugins only paint into their `ToolContext`
+- **InteractiveToolRunner** — stroke executor that sits between the canvas and the plugin: per-stroke working buffer, automatic undo-tile capture on `begin_stroke`, dirty-tile accumulation, and `HistoryKeeper` commit on `end_stroke`
 - **Op Graph** — GEGL-like operation graph: DAG structure, topological sort, ROI-driven lazy evaluation
 - **GraphExecutor** — Tile-parallel execution (rayon), automatic point-op fusion
 - **CanvasService** — canvas service: viewport math (zoom/pan/rotate) and visible tile calculation; actual GPU rendering is delegated to the host (desktop)
 - **ProgressiveRenderer** — Progressive rendering: Low → Medium → High quality
 - **AsyncImageLoader** — tokio async loading: progressive preview (512px → full res), 3 priority strategies
 - **BackgroundSaver** — Background save without blocking UI
-- **LayerStack** — Layer system: pixel layers + adjustment layers (non-destructive), 12 blend modes, basic mask support (with mask inversion)
+- **LayerStack** — Layer system: pixel layers + adjustment layers (non-destructive), 13 blend modes, basic mask support (with mask inversion)
 - **BlendMode SIMD** — 11 blend modes SIMD-optimized (Normal/Multiply/Screen/Overlay/Darken/Lighten/Difference/Exclusion/ColorDodge/ColorBurn/SoftLight)
 - **AIAgent** — template-driven planner (MVP): keyword → tool sequence; interface reserves LLM mode (`AgentMode::Template/Llm/Hybrid`)
 - Typed event system unified on Cordis (14 event names + typed payloads, lifecycle-managed subscriptions)
 
 ### Plugin contracts
 - `Tool` trait with **parameter schemas** (`ParamType` / `ParamSchema` / `ToolSchema`): auto-generated UI forms, validation and default values
+- **`InteractiveTool` trait** — extends `Tool` with a pointer-event stream (`on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`); delivers pre-converted image-space coordinates, pressure, button and modifier state via `PointerEvent`; plugins paint into `ToolContext` and record dirty tiles, while the host owns undo and repaint
 - **WIT interface** (`wit/kaleido.wit`) — WASM boundary: `tool`, `plugin-lifecycle`, `host-functions` interfaces + `world kaleido-plugin`
 - **Plugin host** (`kaleido-plugin-host`) — `PluginManifest`, `Plugin`/`PluginLoader` traits, `PluginManager`, and `AIToolGenerator` for dynamically generated tools
 - **WASM runtime** — compiled `.wasm` plugins are loaded and executed via **wasmtime**: `WasmPluginManager` scans plugin directories, instantiates modules (C ABI: `plugin_init` / `tool_apply` / …), and registers every tool into the registry. Host functions (`host_log`, `host_emit_event`) are linked in
@@ -44,12 +47,13 @@ Kaleido is an image editor under construction. Its architecture is deliberately 
 
 ### Applications
 - **`kaleido-cli`** — image info / convert / list-formats / brightness / invert / resize / grayscale, plus plugin commands: `list-tools`, `tool-schema`, `run` (custom params), `create-tool` (AI-generated tools)
-- **`kaleido-desktop`** — GPUI host with a canvas and a **toolbar generated dynamically from the plugin registry**
+- **`kaleido-desktop`** — GPUI host with a canvas rendering directly from the `ImageStore`, a **toolbar generated dynamically from the plugin registry**, an active `InteractiveTool` receiving pointer events, full **keyboard shortcuts** (Ctrl+Z undo, Ctrl+Shift+Z redo, Ctrl+O open, Ctrl+S save, Ctrl+Shift+S save as), a **menu bar** (File / Edit / View / Mode / Help), and a **status bar** showing undo/redo step counts and file operation feedback
 
 ### Plugin system
 - `Tool` contract (`kaleido-traits`) — plugins implement `name` / `menu_path` / `description` / `apply`
+- `InteractiveTool` contract — pointer-driven tools implement `on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`
 - Cordis service plugins with dependency injection (`Inject`) and fiber-managed lifetimes
-- Example plugins: [`plugins/examples/brightness`](plugins/examples/brightness), [`plugins/examples/invert`](plugins/examples/invert)
+- Example plugins: [`plugins/examples/brightness`](plugins/examples/brightness), [`plugins/examples/invert`](plugins/examples/invert), [`plugins/examples/brush`](plugins/examples/brush) (interactive round brush with pressure sensitivity)
 - Installing / uninstalling a plugin adds / removes commands dynamically — no host changes
 
 ## Architecture
@@ -140,17 +144,20 @@ See [`plugins/examples/invert`](plugins/examples/invert) for the complete exampl
 ```
 crates/
   kaleido-core/        Image data model (TiledImage, Tile, Pixel, SIMD conversion)
-  kaleido-traits/      Contracts: FileCodec, ImageStore, HistoryKeeper, Tool, events
+  kaleido-traits/      Contracts: FileCodec, ImageStore, HistoryKeeper, Tool, InteractiveTool, events
   kaleido-services/    Implementations + Cordis plugins + application container (KaleidoApp)
+                      (InteractiveToolRunner, Op Graph, Layer, Tile History, Blend SIMD)
   kaleido-sdk/         Plugin SDK: ToolPlugin builder + define_tool! macro
   kaleido-plugin-host/ Plugin host: manifest/loader/manager + wasmtime runtime + AIToolGenerator
 apps/
   cli/                Command-line image tool
-  desktop/            GPUI desktop host
+  desktop/            GPUI desktop host (canvas, toolbar, menu bar, status bar)
 plugins/examples/
   brightness/         Brightness tool plugin (with parameter schema)
   invert/             Invert tool plugin
+  brush/              Interactive round brush plugin (pressure-sensitive, stroke interpolation)
 wit/                  WASM interface definitions (tool, lifecycle, host functions)
+docs/                 Architecture docs
 tests/                Integration test fixtures (placeholder)
 ```
 
@@ -163,16 +170,19 @@ tests/                Integration test fixtures (placeholder)
 - [x] **Canvas service** (viewport math, progressive rendering; GPU rendering delegated to desktop)
 - [x] **Async I/O** (AsyncImageLoader + BackgroundSaver)
 - [x] **Dirty-tile undo** (TileHistoryKeeper, memory ∝ modified region)
-- [x] **Layer system** (LayerStack + 12 blend modes)
+- [x] **Layer system** (LayerStack + 13 blend modes)
 - [x] **SIMD blend modes** (11 modes, 8 pixels/iteration)
 - [x] Tool plugin contract + example plugins (native, in-process)
+- [x] **InteractiveTool contract** (pointer-event stream, `ToolContext`, dirty-tile tracking)
+- [x] **InteractiveToolRunner** (stroke executor with undo, working buffer, dirty tracking)
+- [x] **Brush reference plugin** (round brush, pressure sensitivity, stroke interpolation)
 - [x] Tool parameter schemas (auto-generated UI forms)
 - [x] File format codec plugin system
 - [x] Plugin SDK (`kaleido-sdk`): `ToolPlugin` builder + `define_tool!` macro
 - [x] Plugin host framework (`kaleido-plugin-host`) + `AIToolGenerator`
 - [x] WIT interface definitions for the WASM boundary
 - [x] WASM runtime (`wasmtime`) — load compiled `.wasm` tool plugins
-- [x] GPUI desktop host with dynamic plugin toolbar
+- [x] GPUI desktop host with dynamic plugin toolbar, menu bar, keyboard shortcuts, and file I/O
 
 ### TODO
 - [ ] Example WASM tool plugin (compile a tool to `.wasm` and load it)

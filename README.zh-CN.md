@@ -21,23 +21,26 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 - **HistoryKeeper** — 基于有界快照命令的撤销/重做（默认 50 步）
 - **TileHistoryKeeper** — **脏 tile 撤销**：只存储修改的 tile，内存 ∝ 修改区域（非全图）
 - **ToolRegistry** — 插件提供的工具动态注册表
+- **InteractiveTool** — 指针事件流契约，供笔刷类工具使用（`on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`）；**宿主**负责屏幕→图像坐标转换、撤销快照和脏 tile 追踪 — 插件只需在 `ToolContext` 中绘制
+- **InteractiveToolRunner** — 笔触执行器，位于画布和插件之间：每笔触独立工作缓冲区，`begin_stroke` 时自动捕获撤销 tile，累积脏 tile，`end_stroke` 时提交到 `HistoryKeeper`
 - **Op Graph** — 类 GEGL 的操作图：DAG 结构、拓扑排序、ROI 驱动懒求值
 - **GraphExecutor** — Tile 级并行执行（rayon）、相邻 point-op 自动融合
 - **CanvasService** — 画布服务：视口变换数学（zoom/pan/rotate）与可见 tile 计算；实际 GPU 渲染由宿主（桌面端）负责
 - **ProgressiveRenderer** — 渐进渲染：Low → Medium → High 质量
 - **AsyncImageLoader** — tokio 异步加载：渐进预览（512px → 全分辨率）、三种优先级策略
 - **BackgroundSaver** — 后台保存不阻塞 UI
-- **LayerStack** — 图层系统：像素层 + 调整层（非破坏性）、12 种混合模式、基础蒙版支持（含蒙版反转）
+- **LayerStack** — 图层系统：像素层 + 调整层（非破坏性）、13 种混合模式、基础蒙版支持（含蒙版反转）
 - **BlendMode SIMD** — 11 种混合模式 SIMD 优化（Normal/Multiply/Screen/Overlay/Darken/Lighten/Difference/Exclusion/ColorDodge/ColorBurn/SoftLight）
 - **AIAgent** — 模板驱动规划器（MVP）：关键词 → 工具序列；接口预留 LLM 模式（`AgentMode::Template/Llm/Hybrid`）
 - 类型化事件系统统一在 Cordis 之上（14 种事件名 + 类型化 payload，订阅随生命周期自动清理）
 
 ### 应用层
 - **`kaleido-cli`** — 图像信息 / 格式转换 / 列出格式 / 亮度 / 反相 / 缩放 / 灰度化，以及插件命令：`list-tools`、`tool-schema`、`run`（自定义参数）、`create-tool`（AI 生成工具）
-- **`kaleido-desktop`** — GPUI 宿主：画布 + **从插件注册表动态生成的工具栏**
+- **`kaleido-desktop`** — GPUI 宿主：画布直接从 `ImageStore` 渲染，**从插件注册表动态生成的工具栏**，活动 `InteractiveTool` 接收指针事件，完整的**键盘快捷键**（Ctrl+Z 撤销、Ctrl+Shift+Z 重做、Ctrl+O 打开、Ctrl+S 保存、Ctrl+Shift+S 另存为），**菜单栏**（文件 / 编辑 / 视图 / 模式 / 帮助），**状态栏**显示撤销/重做步数和文件操作反馈
 
 ### 插件体系
 - `Tool` 契约（`kaleido-traits`）— 插件实现 `name` / `menu_path` / `description` / `apply`
+- `InteractiveTool` 契约 — 指针驱动工具实现 `on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`
 - **参数 schema**（`ParamType` / `ParamSchema` / `ToolSchema`）— 自动生成 UI 表单、参数校验与默认值
 - **WIT 接口**（`wit/kaleido.wit`）— WASM 边界：`tool`、`plugin-lifecycle`、`host-functions` 接口 + `world kaleido-plugin`
 - **插件宿主**（`kaleido-plugin-host`）— `PluginManifest`、`Plugin`/`PluginLoader` trait、`PluginManager`、`AIToolGenerator`（动态生成工具）
@@ -45,7 +48,7 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 - **插件 SDK**（`kaleido-sdk`）— `ToolPlugin<T>` builder + `define_tool!` 宏
 - **AI 工具生成** — `KaleidoApp::create_ai_tool(描述, 执行函数)` 从 JSON 描述注册工具并发出 `tool_upgraded` 事件
 - Cordis 服务插件：依赖注入（`Inject`）+ fiber 生命周期管理
-- 示例插件：[`plugins/examples/brightness`](plugins/examples/brightness)、[`plugins/examples/invert`](plugins/examples/invert)
+- 示例插件：[`plugins/examples/brightness`](plugins/examples/brightness)、[`plugins/examples/invert`](plugins/examples/invert)、[`plugins/examples/brush`](plugins/examples/brush)（交互式圆形笔刷，支持压感）
 - **安装/卸载插件会动态增删命令，宿主零改动**
 
 ## 架构
@@ -156,17 +159,18 @@ pub fn invert_tool_plugin() -> PluginHandle {
 ```
 crates/
   kaleido-core/       图像数据模型（TiledImage、Tile、Pixel、SIMD 格式转换）
-  kaleido-traits/     契约：FileCodec、ImageStore、HistoryKeeper、Tool、AIAgent、事件
+  kaleido-traits/     契约：FileCodec、ImageStore、HistoryKeeper、Tool、InteractiveTool、事件
   kaleido-services/   实现 + Cordis 插件 + 应用容器（KaleidoApp）
-                      （Op Graph、Canvas、Async I/O、Layer、Tile History、Blend SIMD）
+                      （InteractiveToolRunner、Op Graph、Layer、Tile History、Blend SIMD）
   kaleido-sdk/        插件 SDK：ToolPlugin builder + define_tool! 宏
   kaleido-plugin-host/插件宿主：manifest/loader/manager + wasmtime 运行时 + AIToolGenerator
 apps/
   cli/                命令行图像工具
-  desktop/            GPUI 桌面宿主
+  desktop/            GPUI 桌面宿主（画布、工具栏、菜单栏、状态栏）
 plugins/examples/
   brightness/         亮度工具插件（带参数 schema）
   invert/             反相工具插件
+  brush/              交互式圆形笔刷插件（支持压感、描边插值）
 wit/                  WASM 接口定义（tool、lifecycle、host functions）
 docs/                架构文档（architecture.md）
 tests/                集成测试夹具（占位）
@@ -181,16 +185,19 @@ tests/                集成测试夹具（占位）
 - [x] **Canvas 服务**（视口变换数学、渐进渲染；GPU 渲染由桌面端负责）
 - [x] **异步 I/O**（AsyncImageLoader + BackgroundSaver）
 - [x] **脏 tile 撤销**（TileHistoryKeeper，内存 ∝ 修改区域）
-- [x] **图层系统**（LayerStack + 12 种混合模式）
+- [x] **图层系统**（LayerStack + 13 种混合模式）
 - [x] **SIMD 混合模式**（11 种模式，8 像素/次）
 - [x] Tool 插件契约 + 示例插件（原生、进程内）
+- [x] **InteractiveTool 契约**（指针事件流、`ToolContext`、脏 tile 追踪）
+- [x] **InteractiveToolRunner**（笔触执行器，含撤销、工作缓冲区、脏 tile 追踪）
+- [x] **笔刷参考插件**（圆形笔刷、压感、描边插值）
 - [x] 工具参数 schema（自动生成 UI 表单）
 - [x] 文件格式编解码插件系统
 - [x] 插件 SDK（`kaleido-sdk`）：`ToolPlugin` builder + `define_tool!` 宏
 - [x] 插件宿主框架（`kaleido-plugin-host`）+ `AIToolGenerator`
 - [x] WIT 接口定义（WASM 边界）
 - [x] WASM 运行时（wasmtime）— 加载编译好的 `.wasm` 工具插件
-- [x] GPUI 桌面宿主 + 动态插件工具栏
+- [x] GPUI 桌面宿主 + 动态插件工具栏 + 菜单栏 + 键盘快捷键 + 文件 I/O
 
 ### 待做
 - [ ] 示例 WASM 工具插件（把工具编译成 `.wasm` 并加载）
