@@ -32,7 +32,8 @@ use kaleido_services::app::{AppConfig, KaleidoApp};
 use kaleido_tool_brightness::{BrightnessToolConfig, brightness_tool_plugin};
 use kaleido_tool_brush::brush_tool;
 use kaleido_tool_invert::invert_tool_plugin;
-use kaleido_traits::InteractiveTool;
+use kaleido_tool_solid_layer::SolidLayerTool;
+use kaleido_traits::{InteractiveTool, Panel, Tool};
 
 use crate::canvas::Canvas;
 use crate::mode_bar::ModeBar;
@@ -66,24 +67,40 @@ impl KaleidoEditor {
             .plugin(brightness_tool_plugin(), BrightnessToolConfig::default());
         app.context().plugin(invert_tool_plugin(), ());
 
-        // Open the file passed on the command line, or fall back to the
-        // demo checkerboard.
+        // Register the solid-layer example plugin: once as a tool (clicking
+        // the toolbar entry adds a layer) and once as a panel (its controls
+        // appear in the right side panel). The tool is cloned so each
+        // registry owns its own handle.
+        let solid_tool = SolidLayerTool::new(app.layer_store());
+        {
+            let tool_view: Arc<dyn Tool> = Arc::new(solid_tool.clone());
+            app.tool_registry().register(Arc::downgrade(&tool_view));
+        }
+        {
+            let panel_view: Arc<std::sync::Mutex<dyn Panel>> =
+                Arc::new(std::sync::Mutex::new(solid_tool));
+            app.panel_registry().register(Arc::downgrade(&panel_view));
+        }
+
+        // Open the file passed on the command line, if any.
         if let Some(path) = &initial_path {
-            if let Err(err) = app.image_store().open(path) {
-                eprintln!("打开文件失败 {}: {err}", path.display());
-                app.image_store()
-                    .set_image(demo_checkerboard())
-                    .expect("failed to seed demo image");
+            match app.image_store().open(path) {
+                Ok(()) => {
+                    if let Some(image) = app.image_store().get_image().ok().flatten() {
+                        let _ = app.layer_store().import_image("背景", image);
+                    }
+                }
+                Err(err) => {
+                    eprintln!("打开文件失败 {}: {err}", path.display());
+                }
             }
-        } else {
-            app.image_store()
-                .set_image(demo_checkerboard())
-                .expect("failed to seed demo image");
         }
 
         let store = app.image_store();
         let keeper = app.history_keeper();
         let registry = app.tool_registry();
+        let layer_store = app.layer_store();
+        let panel_registry = app.panel_registry();
 
         // Create shared state entity.
         let app_state = cx.new(|_| AppState::new(Mode::default()));
@@ -103,13 +120,15 @@ impl KaleidoEditor {
                 registry,
                 store,
                 keeper,
+                layer_store,
                 canvas.clone(),
                 status_bar.clone(),
                 cx,
             )
         });
         let mode_bar = cx.new(|cx| ModeBar::new(app_state.clone(), canvas.clone(), cx));
-        let right_panel = cx.new(|cx| RightPanel::new(app_state.clone(), cx));
+        let right_panel =
+            cx.new(|cx| RightPanel::new(app_state.clone(), panel_registry, app.layer_store(), cx));
 
         let focus_handle = cx.focus_handle();
 
@@ -124,19 +143,6 @@ impl KaleidoEditor {
             app_state,
         }
     }
-}
-
-/// Builds a 512×384 checkerboard demo image.
-fn demo_checkerboard() -> TiledImage {
-    let mut image = TiledImage::new(512, 384, PixelFormat::Rgba8);
-    for y in 0..384 {
-        for x in 0..512 {
-            let light = ((x / 32) + (y / 32)) % 2 == 0;
-            let value = if light { 230 } else { 40 };
-            image.set_pixel(x, y, Pixel::rgb(value, value, value));
-        }
-    }
-    image
 }
 
 /// Shows the platform "save as" dialog, then saves the current image to
@@ -182,12 +188,14 @@ impl Render for KaleidoEditor {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let keeper = self.app.history_keeper();
         let store = self.app.image_store();
+        let layer_store = self.app.layer_store();
         let canvas = self.canvas.clone();
         let status_bar = self.status_bar.clone();
 
         // File actions need a `&mut App` to show dialogs / spawn, so they
         // are wired here as element actions (the root div tracks focus).
         let open_store = store.clone();
+        let open_layers = layer_store.clone();
         let open_canvas = canvas.clone();
         let open_status = status_bar.clone();
         let save_store = store.clone();
@@ -233,6 +241,7 @@ impl Render for KaleidoEditor {
                 };
                 let receiver = cx.prompt_for_paths(options);
                 let store = open_store.clone();
+                let layer_store = open_layers.clone();
                 let canvas = open_canvas.clone();
                 let status_bar = open_status.clone();
                 // `.detach()`: dropping the `Task` would cancel the file
@@ -248,6 +257,11 @@ impl Render for KaleidoEditor {
                     let _ = cx.update(|cx| {
                         match store.open(&path) {
                             Ok(()) => {
+                                // The opened image becomes the document's
+                                // single background layer.
+                                if let Ok(Some(img)) = store.get_image() {
+                                    let _ = layer_store.import_image("背景", img);
+                                }
                                 let dims = store
                                     .get_dimensions()
                                     .map(|(w, h)| format!("{w}x{h}"))
