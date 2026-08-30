@@ -1,8 +1,9 @@
 //! Kaleido desktop application entry point.
 
 use anyhow::Result;
-use gpui::{App, AppContext, Bounds, KeyBinding, WindowBounds, WindowOptions, px, size};
-use gpui_component::Root;
+use gpui::{App, AppContext, Bounds, KeyBinding, WindowBounds, WindowDecorations, px, size};
+use gpui_component::{Root, TitleBar};
+use gpui_component_assets::Assets;
 use std::path::PathBuf;
 
 mod app;
@@ -19,7 +20,7 @@ use app::{KaleidoEditor, OpenFile, Redo, Save, SaveAs, Undo};
 fn main() -> Result<()> {
     // Optional image path on the command line: `kaleido-desktop photo.png`.
     let initial_path = std::env::args().nth(1).map(PathBuf::from);
-    let app = gpui_platform::application();
+    let app = gpui_platform::application().with_assets(Assets);
 
     app.run(move |cx: &mut App| {
         gpui_component::init(cx);
@@ -34,12 +35,17 @@ fn main() -> Result<()> {
         ]);
 
         let bounds = Bounds::centered(None, size(px(1200.), px(800.)), cx);
+        // The menu bar lives in the window's title bar (see `ModeBar`), so the
+        // window must draw its own decorations instead of the window manager's.
+        let mut options = TitleBar::window_options();
+        options.window_bounds = Some(WindowBounds::Windowed(bounds));
+        options.focus = true;
+        options.window_decorations = Some(WindowDecorations::Client);
+        if let Some(titlebar) = options.titlebar.as_mut() {
+            titlebar.title = Some("Kaleido".into());
+        }
         cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                focus: true,
-                ..Default::default()
-            },
+            options,
             move |window, cx| {
                 let path = initial_path.clone();
                 let view = cx.new(|cx| KaleidoEditor::new(path, cx));
