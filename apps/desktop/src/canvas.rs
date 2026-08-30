@@ -298,27 +298,6 @@ impl Render for Canvas {
         let runner = self.runner.clone();
         let tool = self.tool.clone();
 
-        // Keyboard events: convert GPUI keystrokes to our KeyEvent and
-        // dispatch to the active tool. We use on_key_event (Window-level)
-        // so we capture keys that aren't bound to global actions.
-        let (key_runner, key_tool) = (runner.clone(), tool.clone());
-        _window.on_key_event(move |event: &gpui::KeyDownEvent, _phase, _window, _cx| {
-            let ke = &event.keystroke;
-            let code = gpui_key_to_keycode(&ke.key, &ke.key_char);
-            let modifiers = gpui_modifiers_to_keymodifiers(&ke.modifiers);
-            let key_event = KeyEvent::new(code, modifiers);
-            dispatch_keyboard(&key_runner, &key_tool, &key_event, true);
-        });
-
-        let (key_up_runner, key_up_tool) = (runner.clone(), tool.clone());
-        _window.on_key_event(move |event: &gpui::KeyUpEvent, _phase, _window, _cx| {
-            let ke = &event.keystroke;
-            let code = gpui_key_to_keycode(&ke.key, &ke.key_char);
-            let modifiers = gpui_modifiers_to_keymodifiers(&ke.modifiers);
-            let key_event = KeyEvent::new(code, modifiers);
-            dispatch_keyboard(&key_up_runner, &key_up_tool, &key_event, false);
-        });
-
         div()
             .id("canvas-surface")
             .size_full()
@@ -381,6 +360,29 @@ impl Render for Canvas {
                         PointerKind::Up,
                         window,
                     );
+                }
+            })
+            // Keyboard events: convert GPUI keystrokes to our KeyEvent and
+            // dispatch to the active tool. We use Div-level handlers which
+            // are called during the paint phase.
+            .on_key_down({
+                let (runner, tool) = (runner.clone(), tool.clone());
+                move |event: &gpui::KeyDownEvent, _window, _cx| {
+                    let ke = &event.keystroke;
+                    let code = gpui_key_to_keycode(&ke.key, &ke.key_char);
+                    let modifiers = gpui_modifiers_to_keymodifiers(&ke.modifiers);
+                    let key_event = KeyEvent::new(code, modifiers);
+                    dispatch_keyboard(&runner, &tool, &key_event, true);
+                }
+            })
+            .on_key_up({
+                let (runner, tool) = (runner.clone(), tool.clone());
+                move |event: &gpui::KeyUpEvent, _window, _cx| {
+                    let ke = &event.keystroke;
+                    let code = gpui_key_to_keycode(&ke.key, &ke.key_char);
+                    let modifiers = gpui_modifiers_to_keymodifiers(&ke.modifiers);
+                    let key_event = KeyEvent::new(code, modifiers);
+                    dispatch_keyboard(&runner, &tool, &key_event, false);
                 }
             })
             .child(if let Some(render_image) = render_image {
