@@ -9,11 +9,11 @@ Kaleido is an image editor under construction. Its architecture is deliberately 
 ## Features
 
 ### Core library (`kaleido-core`)
-- `Image` with zero-copy `Arc<Vec<u8>>` cloning and copy-on-write
-- `TiledImage` 128×128 tile-based storage: sparse allocation, tile-parallel processing, dirty tile tracking
+- `Tile` with zero-copy `Arc<Vec<u8>>` cloning and copy-on-write
+- `TiledImage` (`HashMap<TileCoord, Tile>`) 128×128 tile-based storage: sparse allocation, tile-parallel processing, dirty tile tracking
 - 5 pixel formats (RGBA8 / RGB8 / Gray8 / GrayA8 / RGBA16)
-- **SIMD pixel conversion**: RGBA↔Gray, RGBA↔RGB, RGBA↔GrayA, 6 paths all SIMD-accelerated (`wide` crate, 8 pixels/iteration)
-- Zero-copy sub-views, crop, region copy with overlap protection, format conversion
+- **SIMD pixel conversion**: RGBA↔Gray, RGBA↔GrayA — 4 paths SIMD-accelerated (`wide` crate, 8 pixels/iteration); RGBA↔RGB is scalar
+- Crop, region copy with overlap protection, format conversion
 - SIMD-friendly aligned row strides, full-precision RGBA16 mapping
 
 ### Service layer (`kaleido-traits` + `kaleido-services`)
@@ -25,12 +25,13 @@ Kaleido is an image editor under construction. Its architecture is deliberately 
 - **ToolRegistry** — dynamic registry of tools provided by plugins
 - **Op Graph** — GEGL-like operation graph: DAG structure, topological sort, ROI-driven lazy evaluation
 - **GraphExecutor** — Tile-parallel execution (rayon), automatic point-op fusion
-- **CanvasService** — GPU display service: viewport management (zoom/pan/rotate), visible tile calculation
+- **CanvasService** — canvas service: viewport math (zoom/pan/rotate) and visible tile calculation; actual GPU rendering is delegated to the host (desktop)
 - **ProgressiveRenderer** — Progressive rendering: Low → Medium → High quality
 - **AsyncImageLoader** — tokio async loading: progressive preview (512px → full res), 3 priority strategies
 - **BackgroundSaver** — Background save without blocking UI
-- **LayerStack** — Layer system: pixel layers + adjustment layers (non-destructive), 12 blend modes
-- **BlendMode SIMD** — 8 blend modes SIMD-optimized (Normal/Multiply/Screen/Overlay/Darken/Lighten/Difference/Exclusion)
+- **LayerStack** — Layer system: pixel layers + adjustment layers (non-destructive), 12 blend modes, basic mask support (with mask inversion)
+- **BlendMode SIMD** — 11 blend modes SIMD-optimized (Normal/Multiply/Screen/Overlay/Darken/Lighten/Difference/Exclusion/ColorDodge/ColorBurn/SoftLight)
+- **AIAgent** — template-driven planner (MVP): keyword → tool sequence; interface reserves LLM mode (`AgentMode::Template/Llm/Hybrid`)
 - Typed event system unified on Cordis (14 event names + typed payloads, lifecycle-managed subscriptions)
 
 ### Plugin contracts
@@ -97,7 +98,7 @@ Tools are the unit of plugin functionality. A plugin is a crate that implements 
 
 ```rust
 use cordis::{Inject, PluginHandle, PluginOutput, plugin_sync};
-use kaleido_core::{Image, ImageResult, Pixel};
+use kaleido_core::{ImageResult, Pixel, TiledImage};
 use kaleido_traits::{Tool, ToolParams, ToolRegistry};
 use std::sync::Arc;
 
@@ -107,11 +108,11 @@ impl Tool for InvertTool {
     fn name(&self) -> &str { "invert" }
     fn menu_path(&self) -> String { "调整/反相".into() }
     fn description(&self) -> String { "Invert all pixel colours".into() }
-    fn apply(&self, image: &mut Image, _params: &ToolParams) -> ImageResult<()> {
+    fn apply(&self, image: &mut TiledImage, _params: &ToolParams) -> ImageResult<()> {
         for y in 0..image.height() {
             for x in 0..image.width() {
-                let p = image.get_pixel(x, y)?;
-                image.set_pixel(x, y, Pixel::new(255 - p.r, 255 - p.g, 255 - p.b, p.a))?;
+                let p = image.get_pixel(x, y);
+                image.set_pixel(x, y, Pixel::new(255 - p.r, 255 - p.g, 255 - p.b, p.a));
             }
         }
         Ok(())
@@ -138,7 +139,7 @@ See [`plugins/examples/invert`](plugins/examples/invert) for the complete exampl
 
 ```
 crates/
-  kaleido-core/        Image data model (pixel buffers, formats, geometry)
+  kaleido-core/        Image data model (TiledImage, Tile, Pixel, SIMD conversion)
   kaleido-traits/      Contracts: FileCodec, ImageStore, HistoryKeeper, Tool, events
   kaleido-services/    Implementations + Cordis plugins + application container (KaleidoApp)
   kaleido-sdk/         Plugin SDK: ToolPlugin builder + define_tool! macro
@@ -156,14 +157,14 @@ tests/                Integration test fixtures (placeholder)
 ## Roadmap
 
 ### Completed
-- [x] Core image library (Image + TiledImage + SIMD pixel conversion)
+- [x] Core image library (Tile + TiledImage + SIMD pixel conversion)
 - [x] Service layer (store / codec / history / events) on Cordis
 - [x] **Op Graph execution engine** (DAG, ROI-driven, tile-parallel, point-op fusion)
-- [x] **GPU Canvas service** (viewport management, progressive rendering)
+- [x] **Canvas service** (viewport math, progressive rendering; GPU rendering delegated to desktop)
 - [x] **Async I/O** (AsyncImageLoader + BackgroundSaver)
 - [x] **Dirty-tile undo** (TileHistoryKeeper, memory ∝ modified region)
 - [x] **Layer system** (LayerStack + 12 blend modes)
-- [x] **SIMD blend modes** (8 modes, 8 pixels/iteration)
+- [x] **SIMD blend modes** (11 modes, 8 pixels/iteration)
 - [x] Tool plugin contract + example plugins (native, in-process)
 - [x] Tool parameter schemas (auto-generated UI forms)
 - [x] File format codec plugin system
@@ -177,8 +178,8 @@ tests/                Integration test fixtures (placeholder)
 - [ ] Example WASM tool plugin (compile a tool to `.wasm` and load it)
 - [ ] AI-generated tools end-to-end (generate → compile → load → `tool_upgraded`)
 - [ ] Plugin UI panels
-- [ ] Advanced blend modes (Color Dodge/Burn, Soft Light SIMD optimization)
-- [ ] Mask system improvements
+- [ ] Advanced blend modes (Hard Light SIMD optimization)
+- [ ] Mask system enhancements (feathering, vector masks, etc.)
 
 ## License
 

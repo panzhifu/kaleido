@@ -7,11 +7,11 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 ## 功能特性
 
 ### 核心库（`kaleido-core`）
-- `Image` 使用 `Arc<Vec<u8>>` 实现零拷贝克隆与写时复制（COW）
-- `TiledImage` 128×128 分块存储：稀疏分配、tile 级并行、脏 tile 追踪
+- `Tile` 使用 `Arc<Vec<u8>>` 实现零拷贝克隆与写时复制（COW）
+- `TiledImage`（`HashMap<TileCoord, Tile>`）128×128 分块存储：稀疏分配、tile 级并行、脏 tile 追踪
 - 5 种像素格式（RGBA8 / RGB8 / Gray8 / GrayA8 / RGBA16）
-- **SIMD 格式转换**：RGBA↔Gray、RGBA↔RGB、RGBA↔GrayA，6 条路径全部 SIMD 加速（`wide` crate，8 像素/次）
-- 零拷贝子视图、裁剪、带重叠保护的区域复制、格式转换
+- **SIMD 格式转换**：RGBA↔Gray、RGBA↔GrayA 共 4 条路径 SIMD 加速（`wide` crate，8 像素/次）；RGBA↔RGB 为标量实现
+- 裁剪、带重叠保护的区域复制、格式转换
 - SIMD 友好的行对齐、RGBA16 全精度映射
 
 ### 服务层（`kaleido-traits` + `kaleido-services`）
@@ -23,12 +23,13 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 - **ToolRegistry** — 插件提供的工具动态注册表
 - **Op Graph** — 类 GEGL 的操作图：DAG 结构、拓扑排序、ROI 驱动懒求值
 - **GraphExecutor** — Tile 级并行执行（rayon）、相邻 point-op 自动融合
-- **CanvasService** — GPU 显示服务：视口管理（zoom/pan/rotate）、可见 tile 计算
+- **CanvasService** — 画布服务：视口变换数学（zoom/pan/rotate）与可见 tile 计算；实际 GPU 渲染由宿主（桌面端）负责
 - **ProgressiveRenderer** — 渐进渲染：Low → Medium → High 质量
 - **AsyncImageLoader** — tokio 异步加载：渐进预览（512px → 全分辨率）、三种优先级策略
 - **BackgroundSaver** — 后台保存不阻塞 UI
-- **LayerStack** — 图层系统：像素层 + 调整层（非破坏性）、12 种混合模式
-- **BlendMode SIMD** — 8 种混合模式 SIMD 优化（Normal/Multiply/Screen/Overlay/Darken/Lighten/Difference/Exclusion）
+- **LayerStack** — 图层系统：像素层 + 调整层（非破坏性）、12 种混合模式、基础蒙版支持（含蒙版反转）
+- **BlendMode SIMD** — 11 种混合模式 SIMD 优化（Normal/Multiply/Screen/Overlay/Darken/Lighten/Difference/Exclusion/ColorDodge/ColorBurn/SoftLight）
+- **AIAgent** — 模板驱动规划器（MVP）：关键词 → 工具序列；接口预留 LLM 模式（`AgentMode::Template/Llm/Hybrid`）
 - 类型化事件系统统一在 Cordis 之上（14 种事件名 + 类型化 payload，订阅随生命周期自动清理）
 
 ### 应用层
@@ -56,7 +57,7 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 │  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────────┐ │
 │  │ AI Agent    │  │ Canvas       │  │ Tool Registry           │ │
 │  │ Service     │  │ Service      │  │ (Cordis 服务)            │ │
-│  │ (LLM 规划)   │  │ (GPU 显示)   │  │ ← WASM / 原生 / AI 工具 │ │
+│  │ (模板规划)   │  │ (视口变换)   │  │ ← WASM / 原生 / AI 工具 │ │
 │  └──────┬──────┘  └──────┬───────┘  └─────────────────────────┘ │
 │         │                │                                        │
 │         ▼                ▼                                        │
@@ -113,7 +114,7 @@ cargo run -p kaleido-desktop [path/to/image.png]
 
 ```rust
 use cordis::{Inject, PluginHandle, PluginOutput, plugin_sync};
-use kaleido_core::{Image, ImageResult, Pixel};
+use kaleido_core::{ImageResult, Pixel, TiledImage};
 use kaleido_traits::{Tool, ToolParams, ToolRegistry};
 use std::sync::Arc;
 
@@ -123,11 +124,11 @@ impl Tool for InvertTool {
     fn name(&self) -> &str { "invert" }
     fn menu_path(&self) -> String { "调整/反相".into() }
     fn description(&self) -> String { "反转所有像素颜色".into() }
-    fn apply(&self, image: &mut Image, _params: &ToolParams) -> ImageResult<()> {
+    fn apply(&self, image: &mut TiledImage, _params: &ToolParams) -> ImageResult<()> {
         for y in 0..image.height() {
             for x in 0..image.width() {
-                let p = image.get_pixel(x, y)?;
-                image.set_pixel(x, y, Pixel::new(255 - p.r, 255 - p.g, 255 - p.b, p.a))?;
+                let p = image.get_pixel(x, y);
+                image.set_pixel(x, y, Pixel::new(255 - p.r, 255 - p.g, 255 - p.b, p.a));
             }
         }
         Ok(())
@@ -154,7 +155,7 @@ pub fn invert_tool_plugin() -> PluginHandle {
 
 ```
 crates/
-  kaleido-core/       图像数据模型（Image、TiledImage、SIMD 格式转换）
+  kaleido-core/       图像数据模型（TiledImage、Tile、Pixel、SIMD 格式转换）
   kaleido-traits/     契约：FileCodec、ImageStore、HistoryKeeper、Tool、AIAgent、事件
   kaleido-services/   实现 + Cordis 插件 + 应用容器（KaleidoApp）
                       （Op Graph、Canvas、Async I/O、Layer、Tile History、Blend SIMD）
@@ -174,14 +175,14 @@ tests/                集成测试夹具（占位）
 ## 路线图
 
 ### 已完成
-- [x] 核心图像库（Image + TiledImage + SIMD 格式转换）
+- [x] 核心图像库（Tile + TiledImage + SIMD 格式转换）
 - [x] 服务层（存储 / 编解码 / 历史 / 事件）基于 Cordis
 - [x] **Op Graph 执行引擎**（DAG、ROI 驱动、tile 并行、point-op 融合）
-- [x] **GPU Canvas 服务**（视口管理、渐进渲染）
+- [x] **Canvas 服务**（视口变换数学、渐进渲染；GPU 渲染由桌面端负责）
 - [x] **异步 I/O**（AsyncImageLoader + BackgroundSaver）
 - [x] **脏 tile 撤销**（TileHistoryKeeper，内存 ∝ 修改区域）
 - [x] **图层系统**（LayerStack + 12 种混合模式）
-- [x] **SIMD 混合模式**（8 种模式，8 像素/次）
+- [x] **SIMD 混合模式**（11 种模式，8 像素/次）
 - [x] Tool 插件契约 + 示例插件（原生、进程内）
 - [x] 工具参数 schema（自动生成 UI 表单）
 - [x] 文件格式编解码插件系统
@@ -195,8 +196,8 @@ tests/                集成测试夹具（占位）
 - [ ] 示例 WASM 工具插件（把工具编译成 `.wasm` 并加载）
 - [ ] AI 生成工具端到端（生成 → 编译 → 加载 → `tool_upgraded`）
 - [ ] 插件 UI 面板
-- [ ] 高级混合模式（Color Dodge/Burn、Soft Light 等 SIMD 优化）
-- [ ] 蒙版系统完善
+- [ ] 高级混合模式（Hard Light 等 SIMD 优化）
+- [ ] 蒙版系统增强（羽化、矢量蒙版等）
 
 ## 许可证
 
