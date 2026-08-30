@@ -9,6 +9,8 @@
 /// descriptions. This keeps the trait UI-framework-agnostic while still
 /// allowing rich content.
 
+use std::sync::{Arc, Mutex, Weak};
+
 use serde_json::Value;
 
 // ---------------------------------------------------------------------------
@@ -197,5 +199,36 @@ pub trait Panel: Send + Sync + 'static {
 impl std::fmt::Debug for dyn Panel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Panel").finish_non_exhaustive()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PanelRegistry — host-side registry of plugin-supplied panels
+// ---------------------------------------------------------------------------
+
+/// Registry of panels currently provided by active plugins.
+///
+/// Implementations hold weak references so panels disappear automatically
+/// when their providing plugin is disposed. Panels are wrapped in a
+/// [`Mutex`] so the host can call the interior-mutable render/event
+/// methods. The host queries [`Self::panels`] each frame to render the
+/// side-panel area.
+pub trait PanelRegistry: Send + Sync + 'static {
+    /// Registers a panel. Held weakly — the plugin keeps the strong `Arc`
+    /// alive for as long as its fiber is active.
+    fn register(&self, panel: Weak<Mutex<dyn Panel>>);
+
+    /// Removes the panel at the given index, if present.
+    fn unregister(&self, index: usize);
+
+    /// Returns all live panels (dead weak pointers are filtered out).
+    fn panels(&self) -> Vec<Arc<Mutex<dyn Panel>>>;
+
+    /// Returns the number of live panels.
+    fn len(&self) -> usize;
+
+    /// Returns `true` when no panels are registered.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }

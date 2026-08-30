@@ -295,7 +295,7 @@ fn blend_tile(
         let dst_a = result_data[off + 3];
         let dst = Pixel::new(dst_r, dst_g, dst_b, dst_a);
 
-        let blended = mode.blend(src, dst);
+        let blended = crate::blend::blend(mode, src, dst);
 
         result_data[off] = blended.r;
         result_data[off + 1] = blended.g;
@@ -375,7 +375,7 @@ mod tests {
     fn test_blend_normal() {
         let src = Pixel::new(255, 0, 0, 255); // Red, fully opaque
         let dst = Pixel::new(0, 255, 0, 255); // Green, fully opaque
-        let result = BlendMode::Normal.blend(src, dst);
+        let result = crate::blend::blend(BlendMode::Normal, src, dst);
         // Fully opaque red over green = red.
         assert_eq!(result.r, 255);
         assert_eq!(result.g, 0);
@@ -386,7 +386,7 @@ mod tests {
     fn test_blend_normal_half_alpha() {
         let src = Pixel::new(255, 0, 0, 128); // Red, half transparent
         let dst = Pixel::new(0, 255, 0, 255); // Green, fully opaque
-        let result = BlendMode::Normal.blend(src, dst);
+        let result = crate::blend::blend(BlendMode::Normal, src, dst);
         // Half red over green = orange-ish.
         assert!(result.r > 0 && result.r < 255);
         assert!(result.g > 0 && result.g < 255);
@@ -397,7 +397,7 @@ mod tests {
     fn test_blend_multiply() {
         let src = Pixel::new(255, 128, 64, 255);
         let dst = Pixel::new(128, 128, 128, 255);
-        let result = BlendMode::Multiply.blend(src, dst);
+        let result = crate::blend::blend(BlendMode::Multiply, src, dst);
         // Multiply: (255*128/255, 128*128/255, 64*128/255) = (128, 64, 32)
         assert_eq!(result.r, 128);
         assert_eq!(result.g, 64);
@@ -408,7 +408,7 @@ mod tests {
     fn test_blend_screen() {
         let src = Pixel::new(128, 128, 128, 255);
         let dst = Pixel::new(128, 128, 128, 255);
-        let result = BlendMode::Screen.blend(src, dst);
+        let result = crate::blend::blend(BlendMode::Screen, src, dst);
         // Screen: 255 - (255-128)*(255-128)/255 = 255 - 16129/255 ≈ 255 - 63 = 192
         assert_eq!(result.r, 192);
     }
@@ -417,7 +417,7 @@ mod tests {
     fn test_blend_darken() {
         let src = Pixel::new(200, 100, 50, 255);
         let dst = Pixel::new(100, 150, 200, 255);
-        let result = BlendMode::Darken.blend(src, dst);
+        let result = crate::blend::blend(BlendMode::Darken, src, dst);
         assert_eq!(result.r, 100);
         assert_eq!(result.g, 100);
         assert_eq!(result.b, 50);
@@ -427,7 +427,7 @@ mod tests {
     fn test_blend_lighten() {
         let src = Pixel::new(200, 100, 50, 255);
         let dst = Pixel::new(100, 150, 200, 255);
-        let result = BlendMode::Lighten.blend(src, dst);
+        let result = crate::blend::blend(BlendMode::Lighten, src, dst);
         assert_eq!(result.r, 200);
         assert_eq!(result.g, 150);
         assert_eq!(result.b, 200);
@@ -437,7 +437,7 @@ mod tests {
     fn test_blend_difference() {
         let src = Pixel::new(200, 100, 50, 255);
         let dst = Pixel::new(100, 150, 200, 255);
-        let result = BlendMode::Difference.blend(src, dst);
+        let result = crate::blend::blend(BlendMode::Difference, src, dst);
         assert_eq!(result.r, 100);
         assert_eq!(result.g, 50);
         assert_eq!(result.b, 150);
@@ -562,7 +562,7 @@ mod tests {
         // Overlay with dark dst -> multiply.
         let src = Pixel::new(128, 128, 128, 255);
         let dst = Pixel::new(64, 64, 64, 255);
-        let result = BlendMode::Overlay.blend(src, dst);
+        let result = crate::blend::blend(BlendMode::Overlay, src, dst);
         // 2 * 128 * 64 / 255 = 64
         assert_eq!(result.r, 64);
     }
@@ -571,7 +571,7 @@ mod tests {
     fn test_blend_soft_light() {
         let src = Pixel::new(128, 128, 128, 255);
         let dst = Pixel::new(128, 128, 128, 255);
-        let result = BlendMode::SoftLight.blend(src, dst);
+        let result = crate::blend::blend(BlendMode::SoftLight, src, dst);
         // Soft light with same values should be close to original.
         assert!((result.r as i16 - 128).abs() < 10);
     }

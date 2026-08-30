@@ -53,6 +53,23 @@ pub fn image_store_plugin() -> PluginHandle {
     )
 }
 
+/// Plugin for [`LayerStoreImpl`] — depends on `image_store`.
+///
+/// Provides the document layer stack as a Cordis service. Composites are
+/// published back to the image store, so hosts see layer changes on the
+/// canvas automatically.
+pub fn layer_store_plugin() -> PluginHandle {
+    service_sync::<crate::LayerStoreImpl, (), _>(
+        "layer_store",
+        Inject::new(["image_store"]),
+        |ctx, _config| {
+            let image_store = ctx.require::<ImageStoreImpl>("image_store")?;
+            let image_store: Arc<dyn ImageStore> = image_store;
+            Ok(crate::LayerStoreImpl::new(image_store, ctx))
+        },
+    )
+}
+
 // ---------------------------------------------------------------------------
 // HistoryKeeper configuration
 // ---------------------------------------------------------------------------

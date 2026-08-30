@@ -15,11 +15,12 @@
 
 use std::sync::{Arc, Weak};
 
-use kaleido_core::{ImageResult, TiledImage};
+use kaleido_core::{ImageError, ImageResult, TiledImage};
 use serde_json::Value;
 
 use crate::category::ToolCategory;
 use crate::cursor::CursorType;
+use crate::layer::LayerToolContext;
 
 // ---------------------------------------------------------------------------
 // ToolParams
@@ -439,6 +440,32 @@ pub trait Tool: Send + Sync + 'static {
     /// The host is responsible for loading the image, recording history and
     /// saving — the tool only mutates pixel data.
     fn apply(&self, image: &mut TiledImage, params: &ToolParams) -> ImageResult<()>;
+
+    /// Whether this tool operates on the whole document (layer stack)
+    /// through [`Self::apply_to_document`] instead of a single image.
+    ///
+    /// Hosts call [`Self::apply_to_document`] when this returns `true`,
+    /// otherwise they fall back to [`Self::apply`]. Defaults to `false`,
+    /// so existing single-image tools are unaffected.
+    fn supports_layers(&self) -> bool {
+        false
+    }
+
+    /// Applies this tool to the whole document via its [`LayerStore`].
+    ///
+    /// Only invoked when [`Self::supports_layers`] returns `true`. The
+    /// tool can inspect the layer stack, add/remove/reorder layers and
+    /// draw into the active layer. The host re-composites and refreshes
+    /// the canvas afterwards.
+    fn apply_to_document(
+        &self,
+        _ctx: &mut dyn LayerToolContext,
+        _params: &ToolParams,
+    ) -> ImageResult<()> {
+        Err(ImageError::OperationFailed {
+            reason: "tool does not support layer operations".to_string(),
+        })
+    }
 
     /// Returns the parameter schema for this tool.
     ///

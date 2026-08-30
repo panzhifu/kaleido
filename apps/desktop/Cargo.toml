@@ -10,6 +10,7 @@ kaleido-services = { path = "../../crates/kaleido-services" }
 kaleido-tool-brightness = { path = "../../plugins/examples/brightness" }
 kaleido-tool-brush = { path = "../../plugins/examples/brush" }
 kaleido-tool-invert = { path = "../../plugins/examples/invert" }
+kaleido-tool-solid-layer = { path = "../../plugins/examples/solid-layer" }
 anyhow.workspace = true
 image.workspace = true
 serde_json.workspace = true

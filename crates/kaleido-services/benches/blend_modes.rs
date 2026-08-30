@@ -3,6 +3,7 @@ use kaleido_services::blend_simd::{blend_8_pixels, BlendModeSimd};
 use kaleido_services::layer::BlendMode;
 
 mod scalar {
+    use kaleido_services::blend::blend;
     use kaleido_services::layer::BlendMode;
 
     pub fn blend_8(src: [u32; 8], dst: [u32; 8], mode: BlendMode) -> [u32; 8] {
@@ -10,7 +11,7 @@ mod scalar {
         for i in 0..8 {
             let s = u32_to_pixel(src[i]);
             let d = u32_to_pixel(dst[i]);
-            let blended = mode.blend(s, d);
+            let blended = blend(mode, s, d);
             result[i] = pixel_to_u32(blended);
         }
         result

@@ -3890,6 +3890,7 @@ dependencies = [
  "kaleido-tool-brightness",
  "kaleido-tool-brush",
  "kaleido-tool-invert",
+ "kaleido-tool-solid-layer",
  "kaleido-traits",
  "serde_json",
  "smallvec",
@@ -3968,6 +3969,15 @@ name = "kaleido-tool-invert"
 version = "0.1.0"
 dependencies = [
  "cordis-rs",
+ "kaleido-core",
+ "kaleido-traits",
+ "serde_json",
+]
+
+[[package]]
+name = "kaleido-tool-solid-layer"
+version = "0.1.0"
+dependencies = [
  "kaleido-core",
  "kaleido-traits",
  "serde_json",

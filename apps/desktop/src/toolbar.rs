@@ -12,7 +12,7 @@ use gpui_component::{ActiveTheme as _, v_flex};
 use gpui_component::button::{Button, ButtonVariants};
 
 use kaleido_services::tile_history::TileSnapshotCommand;
-use kaleido_traits::{HistoryKeeper, ImageStore, ToolRegistry};
+use kaleido_traits::{HistoryKeeper, ImageStore, LayerStore, LayerToolContext, ToolRegistry};
 
 use crate::canvas::Canvas;
 use crate::state::AppState;
@@ -23,6 +23,7 @@ pub struct Toolbar {
     registry: Arc<dyn ToolRegistry>,
     store: Arc<dyn ImageStore>,
     keeper: Arc<dyn HistoryKeeper>,
+    layer_store: Arc<dyn LayerStore>,
     canvas: Entity<Canvas>,
     status_bar: Entity<StatusBar>,
 }
@@ -33,6 +34,7 @@ impl Toolbar {
         registry: Arc<dyn ToolRegistry>,
         store: Arc<dyn ImageStore>,
         keeper: Arc<dyn HistoryKeeper>,
+        layer_store: Arc<dyn LayerStore>,
         canvas: Entity<Canvas>,
         status_bar: Entity<StatusBar>,
         _cx: &mut Context<Self>,
@@ -42,9 +44,29 @@ impl Toolbar {
             registry,
             store,
             keeper,
+            layer_store,
             canvas,
             status_bar,
         }
+    }
+}
+
+/// Host-side [`LayerToolContext`]: hands the tool the document's layer store.
+struct LayerToolContextImpl {
+    layer_store: Arc<dyn LayerStore>,
+}
+
+impl LayerToolContext for LayerToolContextImpl {
+    fn layer_store(&self) -> &dyn LayerStore {
+        self.layer_store.as_ref()
+    }
+
+    fn document_width(&self) -> u32 {
+        self.layer_store.document_size().0
+    }
+
+    fn document_height(&self) -> u32 {
+        self.layer_store.document_size().1
     }
 }
 
@@ -55,6 +77,7 @@ impl Render for Toolbar {
 
         let store = self.store.clone();
         let keeper = self.keeper.clone();
+        let layer_store = self.layer_store.clone();
         let canvas = self.canvas.clone();
         let status_bar = self.status_bar.clone();
         let app_state = self.app_state.clone();
@@ -65,6 +88,7 @@ impl Render for Toolbar {
 
             let store = store.clone();
             let keeper = keeper.clone();
+            let layer_store = layer_store.clone();
             let canvas = canvas.clone();
             let status_bar = status_bar.clone();
             let app_state = app_state.clone();
@@ -81,16 +105,31 @@ impl Render for Toolbar {
                     state.selected_tool = Some(name.clone());
                 });
 
-                // Run the tool through the single write path, then record
-                // a dirty-tile undo snapshot.
-                let Ok(Some(before)) = store.get_image() else {
-                    return;
-                };
-
                 let mut params = tool.schema().apply_defaults(&serde_json::json!({}));
                 if tool.name() == "brightness" {
                     params["value"] = serde_json::json!(40);
                 }
+
+                // Layer-document tools operate on the whole layer stack via
+                // the LayerStore; the store re-composites and refreshes the
+                // canvas itself.
+                if tool.supports_layers() {
+                    let mut ctx = LayerToolContextImpl {
+                        layer_store: layer_store.clone(),
+                    };
+                    if let Err(err) = tool.apply_to_document(&mut ctx, &params) {
+                        eprintln!("图层工具执行失败 {}: {err}", tool.name());
+                    }
+                    canvas.update(cx, |_c, cx| cx.notify());
+                    status_bar.update(cx, |_s, cx| cx.notify());
+                    return;
+                }
+
+                // Single-image tool: run through the write path and record
+                // a dirty-tile undo snapshot.
+                let Ok(Some(before)) = store.get_image() else {
+                    return;
+                };
 
                 // `apply_mutation` needs a 'static closure, so move both the
                 // tool handle and the params into it (the outer `tool` is

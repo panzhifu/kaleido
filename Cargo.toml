@@ -11,6 +11,7 @@ members = [
     "plugins/examples/brightness",
     "plugins/examples/invert",
     "plugins/examples/brush",
+    "plugins/examples/solid-layer",
 ]
 
 [workspace.package]

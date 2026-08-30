@@ -15,11 +15,13 @@ use kaleido_traits::{FileCodec, HistoryKeeper, ImageStore, Tool, ToolRegistry};
 use crate::FileCodecRegistry;
 
 use crate::AIAgentImpl;
+use crate::LayerStoreImpl;
 use crate::cordis_plugins::{
     HistoryConfig, ai_agent_plugin, file_codec_plugin, file_codec_registry_plugin,
-    history_keeper_plugin, image_store_plugin, wasm_plugin_manager_plugin,
+    history_keeper_plugin, image_store_plugin, layer_store_plugin, wasm_plugin_manager_plugin,
 };
 use crate::tool_registry_plugin;
+use crate::panel_registry_plugin;
 
 // ---------------------------------------------------------------------------
 // AppConfig
@@ -76,6 +78,8 @@ pub struct KaleidoApp {
     image_store: Arc<dyn ImageStore>,
     history_keeper: Arc<dyn HistoryKeeper>,
     tool_registry: Arc<dyn ToolRegistry>,
+    layer_store: Arc<dyn kaleido_traits::LayerStore>,
+    panel_registry: Arc<dyn kaleido_traits::PanelRegistry>,
     wasm_plugin_manager: Arc<WasmPluginManager>,
     ai_agent: Arc<AIAgentImpl>,
 }
@@ -94,6 +98,7 @@ impl KaleidoApp {
         // Install in dependency order. Cordis also reconciles out-of-order
         // installs automatically, but in-order is deterministic.
         ctx.plugin(tool_registry_plugin(), ());
+        ctx.plugin(panel_registry_plugin(), ());
         ctx.plugin(wasm_plugin_manager_plugin(config.wasm_plugin_dirs), ());
         ctx.plugin(file_codec_plugin(), ());
         ctx.plugin(file_codec_registry_plugin(), ());
@@ -105,6 +110,7 @@ impl KaleidoApp {
             },
         );
         ctx.plugin(ai_agent_plugin(), ());
+        ctx.plugin(layer_store_plugin(), ());
 
         // Resolve typed handles. `require` returns `Arc<T>`, coerced to the
         // trait-object type stored on the app.
@@ -116,6 +122,10 @@ impl KaleidoApp {
         let history_keeper: Arc<dyn HistoryKeeper> =
             ctx.require::<crate::HistoryKeeperImpl>("history_keeper")?;
         let tool_registry: Arc<dyn ToolRegistry> = kaleido_traits::resolve_tool_registry(&ctx)?;
+        let layer_store: Arc<dyn kaleido_traits::LayerStore> =
+            ctx.require::<LayerStoreImpl>("layer_store")?;
+        let panel_registry: Arc<dyn kaleido_traits::PanelRegistry> =
+            crate::panel_registry::resolve_panel_registry(&ctx)?;
         let wasm_plugin_manager: Arc<WasmPluginManager> =
             ctx.require::<WasmPluginManager>("wasm_plugin_manager")?;
         let ai_agent: Arc<AIAgentImpl> = ctx.require::<AIAgentImpl>("ai_agent")?;
@@ -127,6 +137,8 @@ impl KaleidoApp {
             image_store,
             history_keeper,
             tool_registry,
+            layer_store,
+            panel_registry,
             wasm_plugin_manager,
             ai_agent,
         })
@@ -171,6 +183,16 @@ impl KaleidoApp {
     /// Returns the tool registry (all tools provided by installed plugins).
     pub fn tool_registry(&self) -> Arc<dyn ToolRegistry> {
         self.tool_registry.clone()
+    }
+
+    /// Returns the document layer store (layer stack + active layer).
+    pub fn layer_store(&self) -> Arc<dyn kaleido_traits::LayerStore> {
+        self.layer_store.clone()
+    }
+
+    /// Returns the panel registry (plugin-supplied UI panels).
+    pub fn panel_registry(&self) -> Arc<dyn kaleido_traits::PanelRegistry> {
+        self.panel_registry.clone()
     }
 
     /// Returns the WASM plugin manager.

@@ -1,79 +1,15 @@
 //! Layer data types: [`LayerId`], [`BlendMode`], [`LayerContent`], [`Layer`].
-
-use std::sync::atomic::{AtomicU64, Ordering};
+//!
+//! [`LayerId`] and [`BlendMode`] are defined in `kaleido-traits` (the
+//! plugin-facing contract) and re-exported here so the whole crate speaks
+//! one type. [`LayerContent`] and [`Layer`] stay here because they own
+//! service-layer types ([`TiledImage`], [`Op`]).
 
 use kaleido_core::TiledImage;
 
-use crate::blend::blend;
+pub use kaleido_traits::{BlendMode, LayerId};
+
 use crate::op_graph::Op;
-
-// ---------------------------------------------------------------------------
-// LayerId
-// ---------------------------------------------------------------------------
-
-/// Unique identifier for a layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LayerId(pub u64);
-
-static NEXT_LAYER_ID: AtomicU64 = AtomicU64::new(1);
-
-impl LayerId {
-    pub fn new() -> Self {
-        Self(NEXT_LAYER_ID.fetch_add(1, Ordering::SeqCst))
-    }
-}
-
-impl Default for LayerId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// BlendMode
-// ---------------------------------------------------------------------------
-
-/// Layer blend modes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BlendMode {
-    /// Normal blending (alpha compositing).
-    Normal,
-    /// Multiply: result = src * dst / 255.
-    Multiply,
-    /// Screen: result = 255 - (255-src)*(255-dst)/255.
-    Screen,
-    /// Overlay: combination of multiply and screen based on dst.
-    Overlay,
-    /// Darken: result = min(src, dst).
-    Darken,
-    /// Lighten: result = max(src, dst).
-    Lighten,
-    /// Color Dodge: result = dst / (1 - src).
-    ColorDodge,
-    /// Color Burn: result = 1 - (1 - dst) / src.
-    ColorBurn,
-    /// Hard Light: like Overlay but with src and dst swapped.
-    HardLight,
-    /// Soft Light: gentle contrast adjustment.
-    SoftLight,
-    /// Difference: result = |src - dst|.
-    Difference,
-    /// Exclusion: softer version of Difference.
-    Exclusion,
-}
-
-impl BlendMode {
-    /// Blends `src` onto `dst` using this blend mode.
-    pub fn blend(self, src: kaleido_core::Pixel, dst: kaleido_core::Pixel) -> kaleido_core::Pixel {
-        blend(self, src, dst)
-    }
-}
-
-impl Default for BlendMode {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
 
 // ---------------------------------------------------------------------------
 // LayerContent

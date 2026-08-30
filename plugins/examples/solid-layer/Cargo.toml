@@ -1,0 +1,9 @@
+[package]
+name = "kaleido-tool-solid-layer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kaleido-core = { path = "../../../crates/kaleido-core" }
+kaleido-traits = { path = "../../../crates/kaleido-traits" }
+serde_json.workspace = true

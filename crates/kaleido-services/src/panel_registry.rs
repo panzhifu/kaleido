@@ -1,40 +1,12 @@
 //! Panel registry — manages plugin-supplied panels.
 //!
-//! The [`PanelRegistry`] holds panels provided by plugins. The host
-//! queries the registry to find the panel for the currently active tool
-//! and renders it in the side panel area.
+//! The [`PanelRegistry`] contract lives in `kaleido-traits`; this module
+//! provides the default implementation plus the Cordis plugin and resolver.
 
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
-use kaleido_traits::Panel;
-
-// ---------------------------------------------------------------------------
-// PanelRegistry
-// ---------------------------------------------------------------------------
-
-/// Registry of panels currently provided by active plugins.
-///
-/// Implementations hold weak references so panels disappear automatically
-/// when their providing plugin is disposed.
-pub trait PanelRegistry: Send + Sync + 'static {
-    /// Registers a panel. Held weakly — the plugin keeps the strong `Arc`
-    /// alive for as long as its fiber is active.
-    fn register(&self, panel: Weak<dyn Panel>);
-
-    /// Removes the panel at the given index, if present.
-    fn unregister(&self, index: usize);
-
-    /// Returns all live panels (dead weak pointers are filtered out).
-    fn panels(&self) -> Vec<Arc<dyn Panel>>;
-
-    /// Returns the number of live panels.
-    fn len(&self) -> usize;
-
-    /// Returns `true` when no panels are registered.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
+use cordis::{Inject, PluginHandle};
+use kaleido_traits::{Panel, PanelRegistry};
 
 /// Resolves the panel registry from a Cordis context.
 pub fn resolve_panel_registry(
@@ -57,7 +29,7 @@ pub fn resolve_panel_registry(
 
 #[derive(Debug)]
 pub struct PanelEntry {
-    pub panel: Weak<dyn Panel>,
+    pub panel: Weak<Mutex<dyn Panel>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -86,7 +58,7 @@ impl PanelRegistryImpl {
 }
 
 impl PanelRegistry for PanelRegistryImpl {
-    fn register(&self, panel: Weak<dyn Panel>) {
+    fn register(&self, panel: Weak<Mutex<dyn Panel>>) {
         let mut panels = self.panels.lock().unwrap();
         panels.push(PanelEntry { panel });
     }
@@ -98,7 +70,7 @@ impl PanelRegistry for PanelRegistryImpl {
         }
     }
 
-    fn panels(&self) -> Vec<Arc<dyn Panel>> {
+    fn panels(&self) -> Vec<Arc<Mutex<dyn Panel>>> {
         self.sweep();
         let panels = self.panels.lock().unwrap();
         panels
@@ -112,4 +84,20 @@ impl PanelRegistry for PanelRegistryImpl {
         let panels = self.panels.lock().unwrap();
         panels.len()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cordis plugin
+// ---------------------------------------------------------------------------
+
+/// Plugin that installs the [`PanelRegistry`] service.
+///
+/// Plugins provide panels via `register`; the host reads live panels each
+/// frame and renders them in its side panel area.
+pub fn panel_registry_plugin() -> PluginHandle {
+    cordis::plugin_sync::<(), _>("panel_registry", Inject::none(), |ctx, _config| {
+        let registry: Arc<dyn PanelRegistry> = Arc::new(PanelRegistryImpl::new());
+        ctx.provide("panel_registry", registry)?;
+        Ok(cordis::PluginOutput::none())
+    })
 }

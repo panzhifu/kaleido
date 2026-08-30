@@ -8,6 +8,7 @@ pub mod history_keeper;
 pub mod image_store;
 pub mod interactive_tool;
 pub mod keyboard;
+pub mod layer;
 pub mod panel;
 pub mod selection_tool;
 pub mod tool;
@@ -34,7 +35,10 @@ pub use interactive_tool::{
     InteractiveTool, Modifiers, PointerButtons, PointerEvent, PointerKind, ToolContext,
 };
 pub use keyboard::{KeyCode, KeyEvent, KeyModifiers, KeyState};
-pub use panel::{Panel, PanelButton, PanelContext, PanelElement, PanelSection};
+pub use layer::{BlendMode, LayerId, LayerInfo, LayerStore, LayerToolContext};
+pub use panel::{
+    Panel, PanelButton, PanelContext, PanelElement, PanelRegistry, PanelSection,
+};
 pub use selection_tool::{Selection, SelectionMode, SelectionTool};
 pub use tool::{
     NumericConstraints, ParamSchema, ParamType, Tool, ToolParams, ToolRegistry, ToolSchema,
