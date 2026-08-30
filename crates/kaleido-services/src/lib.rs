@@ -9,6 +9,7 @@ pub mod file_codec_impl;
 pub mod file_codec_registry;
 pub mod history_keeper_impl;
 pub mod image_store_impl;
+pub mod interactive_tool;
 pub mod layer;
 pub mod layer_types;
 pub mod op_graph;
@@ -27,6 +28,7 @@ pub use file_codec_registry::{
 };
 pub use history_keeper_impl::HistoryKeeperImpl;
 pub use image_store_impl::ImageStoreImpl;
+pub use interactive_tool::InteractiveToolRunner;
 pub use blend::blend;
 pub use layer::{LayerStack};
 pub use layer_types::{BlendMode, Layer, LayerContent, LayerId};

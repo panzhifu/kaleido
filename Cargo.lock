@@ -3888,6 +3888,7 @@ dependencies = [
  "kaleido-core",
  "kaleido-services",
  "kaleido-tool-brightness",
+ "kaleido-tool-brush",
  "kaleido-tool-invert",
  "kaleido-traits",
  "serde_json",
@@ -3948,6 +3949,15 @@ name = "kaleido-tool-brightness"
 version = "0.1.0"
 dependencies = [
  "cordis-rs",
+ "kaleido-core",
+ "kaleido-traits",
+ "serde_json",
+]
+
+[[package]]
+name = "kaleido-tool-brush"
+version = "0.1.0"
+dependencies = [
  "kaleido-core",
  "kaleido-traits",
  "serde_json",

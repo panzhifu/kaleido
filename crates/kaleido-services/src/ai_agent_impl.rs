@@ -530,7 +530,18 @@ mod tests {
         }
     }
 
-    fn setup_test_env() -> (Arc<dyn ToolRegistry>, Arc<ImageStoreImpl>, Arc<AIAgentImpl>) {
+    /// Returns the registry, image store, agent, and the strong tool
+    /// references.
+    ///
+    /// The tool `Arc`s must be returned (and kept alive by the caller):
+    /// `ToolRegistry` only holds `Weak<dyn Tool>`, so dropping them here
+    /// would leave the registry effectively empty.
+    fn setup_test_env() -> (
+        Arc<dyn ToolRegistry>,
+        Arc<ImageStoreImpl>,
+        Arc<AIAgentImpl>,
+        Vec<Arc<dyn kaleido_traits::Tool>>,
+    ) {
         let ctx = Context::new();
         let registry: Arc<dyn ToolRegistry> =
             Arc::new(crate::tool_registry::ToolRegistryImpl::new());
@@ -546,12 +557,12 @@ mod tests {
 
         let agent = Arc::new(AIAgentImpl::new(registry.clone(), image_store.clone(), ctx));
 
-        (registry, image_store, agent)
+        (registry, image_store, agent, vec![gray_tool, bright_tool])
     }
 
     #[test]
     fn test_plan_brightness_keyword() {
-        let (_registry, _store, agent) = setup_test_env();
+        let (_registry, _store, agent, _tools) = setup_test_env();
         let plan = agent.plan("把图片亮一点", None);
         assert!(plan.is_ok(), "Should create a plan for brightness");
         let plan = plan.unwrap();
@@ -560,7 +571,7 @@ mod tests {
 
     #[test]
     fn test_plan_fallback_to_tool_name() {
-        let (_registry, _store, agent) = setup_test_env();
+        let (_registry, _store, agent, _tools) = setup_test_env();
         let plan = agent.plan("gray_fill", None);
         assert!(plan.is_ok(), "Fallback should match tool name");
         let plan = plan.unwrap();
@@ -583,7 +594,7 @@ mod tests {
 
     #[test]
     fn test_execute_plan_empty() {
-        let (_registry, store, agent) = setup_test_env();
+        let (_registry, store, agent, _tools) = setup_test_env();
         let img = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
         store.set_image(img).unwrap();
         let empty_plan = Plan::new("empty");
@@ -593,7 +604,7 @@ mod tests {
 
     #[test]
     fn test_execute_plan_no_image() {
-        let (_registry, _store, agent) = setup_test_env();
+        let (_registry, _store, agent, _tools) = setup_test_env();
         let plan = Plan::new("test").with_action("gray_fill", serde_json::json!({}), "Fill gray");
         let result = agent.execute_plan(&plan);
         assert!(matches!(result, Err(AgentError::NoImageLoaded)));
@@ -601,7 +612,7 @@ mod tests {
 
     #[test]
     fn test_execute_plan_success() {
-        let (_registry, store, agent) = setup_test_env();
+        let (_registry, store, agent, _tools) = setup_test_env();
         let img = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(100, 100, 100)).unwrap();
         store.set_image(img).unwrap();
         let plan = Plan::new("test").with_action("gray_fill", serde_json::json!({}), "Fill with gray");
@@ -614,7 +625,7 @@ mod tests {
 
     #[test]
     fn test_run_plan_and_execute() {
-        let (_registry, store, agent) = setup_test_env();
+        let (_registry, store, agent, _tools) = setup_test_env();
         let img = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(50, 50, 50)).unwrap();
         store.set_image(img).unwrap();
         let result = agent.run("亮一点", None);
@@ -625,7 +636,7 @@ mod tests {
 
     #[test]
     fn test_stats_tracking() {
-        let (_registry, store, agent) = setup_test_env();
+        let (_registry, store, agent, _tools) = setup_test_env();
         let img = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(50, 50, 50)).unwrap();
         store.set_image(img).unwrap();
         let _ = agent.run("gray_fill", None);
@@ -637,13 +648,13 @@ mod tests {
 
     #[test]
     fn test_mode_is_template() {
-        let (_registry, _store, agent) = setup_test_env();
+        let (_registry, _store, agent, _tools) = setup_test_env();
         assert_eq!(agent.mode(), AgentMode::Template);
     }
 
     #[test]
     fn test_max_steps_exceeded() {
-        let (_registry, store, agent) = setup_test_env();
+        let (_registry, store, agent, _tools) = setup_test_env();
         let img = TiledImage::with_color(4, 4, PixelFormat::Rgba8, Pixel::rgb(50, 50, 50)).unwrap();
         store.set_image(img).unwrap();
         let mut plan = Plan::new("too many steps");

@@ -279,7 +279,7 @@ mod tests {
     use super::*;
     use crate::image_store_impl::ImageStoreImpl;
     use crate::tile_history::TileSnapshotCommand;
-    use kaleido_core::{Pixel, PixelFormat};
+    use kaleido_core::{Pixel, PixelFormat, TiledImage};
     use kaleido_traits::{HistoryChangedEvent, HISTORY_CHANGED};
 
     // ─── Test helpers ──

@@ -3,6 +3,7 @@ pub mod events;
 pub mod file_codec;
 pub mod history_keeper;
 pub mod image_store;
+pub mod interactive_tool;
 pub mod tool;
 
 pub use ai_agent::*;
@@ -18,6 +19,9 @@ pub use events::{
 pub use file_codec::{FileCodec, ImageFormat};
 pub use history_keeper::{Command, HistoryEntry, HistoryError, HistoryKeeper, HistoryResult};
 pub use image_store::ImageStore;
+pub use interactive_tool::{
+    InteractiveTool, Modifiers, PointerButtons, PointerEvent, PointerKind, ToolContext,
+};
 pub use tool::{
     NumericConstraints, ParamSchema, ParamType, Tool, ToolParams, ToolRegistry, ToolSchema,
     resolve_tool_registry,

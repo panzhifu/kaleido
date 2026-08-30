@@ -193,6 +193,13 @@ impl TileSnapshotCommand {
     /// Applies the "after" state to a TiledImage (for redo).
     pub fn apply_after(&self, image: &mut TiledImage) -> ImageResult<()> {
         for snapshot in &self.snapshots {
+            // An empty buffer means the tile was absent in the source image
+            // (`from_diff` records `unwrap_or_default()` for missing tiles).
+            // Writing it back would truncate the tile buffer to zero length
+            // and panic on later pixel access — skip instead.
+            if snapshot.after.is_empty() {
+                continue;
+            }
             let tile = image
                 .get_or_create_tile(snapshot.coord.col, snapshot.coord.row);
             // Replace the tile data with the "after" state.
@@ -206,6 +213,12 @@ impl TileSnapshotCommand {
     /// Applies the "before" state to a TiledImage (for undo).
     pub fn apply_before(&self, image: &mut TiledImage) -> ImageResult<()> {
         for snapshot in &self.snapshots {
+            // See `apply_after` — an empty buffer means the tile did not
+            // exist before the operation. Skipping keeps the current tile
+            // intact (undo cannot remove tiles; tracked as a known limit).
+            if snapshot.before.is_empty() {
+                continue;
+            }
             let tile = image
                 .get_or_create_tile(snapshot.coord.col, snapshot.coord.row);
             // Replace the tile data with the "before" state.

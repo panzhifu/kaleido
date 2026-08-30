@@ -146,7 +146,10 @@ fn overlay_channel_simd(src: u32x8, dst: u32x8) -> u32x8 {
     // if dst < 128: 2 * src * dst / 255
     // else: 255 - 2 * (255-src) * (255-dst) / 255
     let dark = (src * dst + val_128()) >> 7; // 2 * src * dst / 255
-    let light = val_255() - ((val_255() - src) * (val_255() - dst) + val_128()) >> 7;
+    // Note: `-` binds tighter than `>>` in Rust, so the shift must be
+    // parenthesised: 255 - ((((255-src) * (255-dst) + 128) >> 7)).
+    let light =
+        val_255() - ((((val_255() - src) * (val_255() - dst) + val_128()) >> 7));
 
     // Select based on dst >= 128
     let mask = dst.cmp_gt(val_128());
@@ -387,7 +390,7 @@ fn soft_light_channel_simd(src: u32x8, dst: u32x8) -> u32x8 {
 
     // For src < 128: subtract sensitivity * (128 - src) / 128
     // For src >= 128: add sensitivity * (src - 128) / 128
-    let half_val = val_255() >> 1; // 128
+    let half_val = u32x8::splat(128); // 128, not 255 >> 1 (which is 127)
     let is_dark = src.cmp_lt(half_val); // src < 128
     let distance = is_dark.blend(
         half_val - src, // 128 - src (positive when src < 128)

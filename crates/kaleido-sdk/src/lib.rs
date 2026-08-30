@@ -155,11 +155,9 @@ macro_rules! define_tool {
 
             fn apply(
                 &self,
-                image: &kaleido_core::TiledImage,
+                image: &mut kaleido_core::TiledImage,
                 params: &kaleido_traits::ToolParams,
             ) -> kaleido_core::ImageResult<()> {
-                let _ = image;
-                let _ = params;
                 $apply(image, params)
             }
 

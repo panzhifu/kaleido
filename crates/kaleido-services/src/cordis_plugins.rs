@@ -139,7 +139,7 @@ pub fn wasm_plugin_manager_plugin(plugin_dirs: Vec<PathBuf>) -> PluginHandle {
 pub fn ai_agent_plugin() -> PluginHandle {
     service_sync::<crate::AIAgentImpl, (), _>(
         "ai_agent",
-        Inject::new(["image_store"]),
+        Inject::new(["image_store", "tool_registry"]),
         |ctx, _config| {
             let image_store = ctx.require::<crate::ImageStoreImpl>("image_store")?;
             let tool_registry = resolve_tool_registry(&ctx)?;

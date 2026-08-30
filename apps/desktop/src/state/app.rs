@@ -7,11 +7,16 @@ use crate::modes::Mode;
 #[derive(Clone)]
 pub struct AppState {
     pub current_mode: Mode,
+    /// Name of the currently selected tool (from the plugin registry).
+    pub selected_tool: Option<String>,
 }
 
 impl AppState {
     pub fn new(mode: Mode) -> Self {
-        Self { current_mode: mode }
+        Self {
+            current_mode: mode,
+            selected_tool: None,
+        }
     }
 }
 
