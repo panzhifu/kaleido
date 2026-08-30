@@ -1,9 +1,9 @@
-pub mod canvas;
-pub mod history;
-pub mod layers;
-pub mod tool_params;
+//! Dock panels for the Kaleido workspace.
 
-pub use canvas::CanvasPanel;
-pub use history::HistoryPanel;
-pub use layers::LayersPanel;
-pub use tool_params::ToolParamsPanel;
+pub mod canvas_panel;
+pub mod history_panel;
+pub mod side_panel;
+
+pub use canvas_panel::CanvasPanel;
+pub use history_panel::HistoryPanel;
+pub use side_panel::SidePanel;

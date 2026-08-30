@@ -8,7 +8,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use gpui::*;
-use gpui_component::{ActiveTheme as _, h_flex, v_flex};
+use std::rc::Rc;
+
+use gpui_component::{
+    ActiveTheme as _,
+    dock::{DockArea, DockLayout, DockSkin, panel_handle},
+    v_flex,
+};
 
 // Undo / redo are keyboard-driven (Ctrl+Z / Ctrl+Shift+Z), so they are
 // declared as GPUI actions and bound in `main.rs`.
@@ -27,17 +33,16 @@ actions!(
         SaveAs
     ]
 );
-use kaleido_core::{Pixel, PixelFormat, TiledImage};
 use kaleido_services::app::{AppConfig, KaleidoApp};
 use kaleido_tool_brightness::{BrightnessToolConfig, brightness_tool_plugin};
 use kaleido_tool_brush::brush_tool;
 use kaleido_tool_invert::invert_tool_plugin;
-use kaleido_tool_solid_layer::SolidLayerTool;
-use kaleido_traits::{InteractiveTool, Panel, Tool};
+use kaleido_traits::InteractiveTool;
 
 use crate::canvas::Canvas;
 use crate::mode_bar::ModeBar;
 use crate::modes::Mode;
+use crate::panels::{CanvasPanel, HistoryPanel, SidePanel};
 use crate::right_panel::RightPanel;
 use crate::state::{AppState, AppStateEntity};
 use crate::status_bar::StatusBar;
@@ -58,29 +63,18 @@ pub struct KaleidoEditor {
     right_panel: Entity<RightPanel>,
     status_bar: Entity<StatusBar>,
     app_state: AppStateEntity,
+    /// The dock area managing the main layout.
+    dock_area: Entity<DockArea>,
+    /// The dock skin for rendering.
+    _dock_skin: Rc<DockSkin>,
 }
 
 impl KaleidoEditor {
-    pub fn new(initial_path: Option<PathBuf>, cx: &mut Context<Self>) -> Self {
+    pub fn new(initial_path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let app = KaleidoApp::boot(AppConfig::default()).expect("failed to boot Kaleido");
         app.context()
             .plugin(brightness_tool_plugin(), BrightnessToolConfig::default());
         app.context().plugin(invert_tool_plugin(), ());
-
-        // Register the solid-layer example plugin: once as a tool (clicking
-        // the toolbar entry adds a layer) and once as a panel (its controls
-        // appear in the right side panel). The tool is cloned so each
-        // registry owns its own handle.
-        let solid_tool = SolidLayerTool::new(app.layer_store());
-        {
-            let tool_view: Arc<dyn Tool> = Arc::new(solid_tool.clone());
-            app.tool_registry().register(Arc::downgrade(&tool_view));
-        }
-        {
-            let panel_view: Arc<std::sync::Mutex<dyn Panel>> =
-                Arc::new(std::sync::Mutex::new(solid_tool));
-            app.panel_registry().register(Arc::downgrade(&panel_view));
-        }
 
         // Open the file passed on the command line, if any.
         if let Some(path) = &initial_path {
@@ -119,7 +113,7 @@ impl KaleidoEditor {
                 app_state.clone(),
                 registry,
                 store,
-                keeper,
+                keeper.clone(),
                 layer_store,
                 canvas.clone(),
                 status_bar.clone(),
@@ -132,6 +126,34 @@ impl KaleidoEditor {
 
         let focus_handle = cx.focus_handle();
 
+        let (dock_area, dock_skin) = DockSkin::dock_area("main-dock", None, window, cx);
+
+        // Set up the dock layout: canvas (center) + side panel (right) + history (bottom).
+        let canvas_panel =
+            cx.new(|cx| CanvasPanel::new(canvas.clone(), app_state.clone(), cx));
+        let canvas_layout = DockLayout::tabs().panel_view(panel_handle(canvas_panel), cx);
+
+        let side_panel =
+            cx.new(|cx| SidePanel::new(right_panel.clone(), app_state.clone(), cx));
+        let side_layout = DockLayout::tabs().panel_view(panel_handle(side_panel), cx);
+
+        let history_panel = cx.new(|cx| HistoryPanel::new(keeper.clone(), cx));
+        let bottom_layout = DockLayout::tabs().panel_view(panel_handle(history_panel), cx);
+
+        // Center: horizontal split between canvas and side panel.
+        let center = DockLayout::h_split()
+            .child(canvas_layout, None)
+            .child(side_layout, Some(px(240.)));
+
+        // Main: vertical split between center and bottom panel.
+        let main_layout = DockLayout::v_split()
+            .child(center, None)
+            .child(bottom_layout, Some(px(150.)));
+
+        dock_area.update(cx, |area, cx| {
+            area.set_center(main_layout, window, cx);
+        });
+
         Self {
             app,
             focus_handle,
@@ -141,6 +163,8 @@ impl KaleidoEditor {
             right_panel,
             status_bar,
             app_state,
+            dock_area,
+            _dock_skin: dock_skin,
         }
     }
 }
@@ -185,17 +209,16 @@ fn prompt_save_as(
 }
 
 impl Render for KaleidoEditor {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let keeper = self.app.history_keeper();
         let store = self.app.image_store();
-        let layer_store = self.app.layer_store();
         let canvas = self.canvas.clone();
         let status_bar = self.status_bar.clone();
 
         // File actions need a `&mut App` to show dialogs / spawn, so they
         // are wired here as element actions (the root div tracks focus).
         let open_store = store.clone();
-        let open_layers = layer_store.clone();
+        let open_layers = self.app.layer_store().clone();
         let open_canvas = canvas.clone();
         let open_status = status_bar.clone();
         let save_store = store.clone();
@@ -257,8 +280,6 @@ impl Render for KaleidoEditor {
                     let _ = cx.update(|cx| {
                         match store.open(&path) {
                             Ok(()) => {
-                                // The opened image becomes the document's
-                                // single background layer.
                                 if let Ok(Some(img)) = store.get_image() {
                                     let _ = layer_store.import_image("背景", img);
                                 }
@@ -325,26 +346,11 @@ impl Render for KaleidoEditor {
             })
             .child(self.mode_bar.clone())
             .child(
-                h_flex()
+                // Main content area managed by the dock system.
+                div()
                     .flex_1()
                     .min_h(px(0.))
-                    .child(self.toolbar.clone())
-                    .child(
-                        div()
-                            .id("canvas-area")
-                            .flex_1()
-                            .min_w(px(0.))
-                            .bg(gpui::rgb(0x0d1117))
-                            .child(self.canvas.clone()),
-                    )
-                    // Fixed width: `Canvas` uses it to map window
-                    // coordinates back to image coordinates.
-                    .child(
-                        div()
-                            .w(px(240.))
-                            .h_full()
-                            .child(self.right_panel.clone()),
-                    ),
+                    .child(self.dock_area.clone()),
             )
             .child(self.status_bar.clone())
     }

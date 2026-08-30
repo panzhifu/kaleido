@@ -7,9 +7,11 @@ use gpui_component_assets::Assets;
 use std::path::PathBuf;
 
 mod app;
+mod bottom_panel;
 mod canvas;
 mod mode_bar;
 mod modes;
+mod panels;
 mod right_panel;
 mod state;
 mod status_bar;
@@ -48,7 +50,7 @@ fn main() -> Result<()> {
             options,
             move |window, cx| {
                 let path = initial_path.clone();
-                let view = cx.new(|cx| KaleidoEditor::new(path, cx));
+                let view = cx.new(|cx| KaleidoEditor::new(path, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             },
         )
