@@ -9,6 +9,7 @@ mod canvas;
 mod mode_bar;
 mod modes;
 mod right_panel;
+mod state;
 mod status_bar;
 mod toolbar;
 

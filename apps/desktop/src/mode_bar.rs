@@ -2,33 +2,25 @@
 
 use gpui::*;
 use gpui_component::{ActiveTheme as _, h_flex};
+use gpui_component::button::{Button, ButtonVariants};
 
 use crate::modes::Mode;
+use crate::state::AppState;
 
 pub struct ModeBar {
-    current_mode: Mode,
+    app_state: Entity<AppState>,
 }
 
 impl ModeBar {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
-        Self {
-            current_mode: Mode::default(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn current_mode(&self) -> Mode {
-        self.current_mode
-    }
-
-    #[allow(dead_code)]
-    pub fn set_mode(&mut self, mode: Mode) {
-        self.current_mode = mode;
+    pub fn new(app_state: Entity<AppState>, _cx: &mut Context<Self>) -> Self {
+        Self { app_state }
     }
 }
 
 impl Render for ModeBar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let current_mode = self.app_state.read(cx).current_mode;
+
         let modes = [
             Mode::Vector,
             Mode::Pixel,
@@ -45,24 +37,22 @@ impl Render for ModeBar {
             .px(px(8.))
             .gap(px(4.))
             .children(modes.iter().map(|mode| {
-                let is_active = *mode == self.current_mode;
+                let is_active = *mode == current_mode;
                 let label = mode.label();
-                div()
-                    .px(px(12.))
-                    .py(px(6.))
-                    .rounded(cx.theme().radius)
-                    .bg(if is_active {
-                        cx.theme().accent
-                    } else {
-                        cx.theme().transparent
-                    })
-                    .text_sm()
-                    .text_color(if is_active {
-                        cx.theme().accent_foreground
-                    } else {
-                        cx.theme().foreground
-                    })
-                    .child(label)
+                let mode_clone = *mode;
+                let app_state = self.app_state.clone();
+                let mut button = Button::new(format!("mode-{}", mode_clone.icon()))
+                    .label(label);
+                if is_active {
+                    button = button.primary();
+                } else {
+                    button = button.ghost();
+                }
+                button.on_click(move |_event, _window, cx| {
+                    app_state.update(cx, |state, _cx| {
+                        state.current_mode = mode_clone;
+                    });
+                })
             }))
     }
 }

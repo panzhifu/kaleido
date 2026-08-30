@@ -3,52 +3,35 @@
 use gpui::*;
 use gpui_component::{ActiveTheme as _, v_flex};
 
-use crate::modes::{Mode, Tool};
+use crate::modes::Tool;
+use crate::state::AppState;
 
 pub struct Toolbar {
-    mode: Mode,
+    app_state: Entity<AppState>,
     selected_tool: Tool,
-    tools: Vec<Tool>,
 }
 
 impl Toolbar {
-    pub fn new(mode: Mode, _cx: &mut Context<Self>) -> Self {
-        let tools = mode.tools();
-        let selected_tool = tools.first().cloned().unwrap_or(Tool::Select);
+    pub fn new(app_state: Entity<AppState>, _cx: &mut Context<Self>) -> Self {
         Self {
-            mode,
-            selected_tool,
-            tools,
+            app_state,
+            selected_tool: Tool::Select,
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn set_mode(&mut self, mode: Mode) {
-        self.mode = mode;
-        self.tools = mode.tools();
-        self.selected_tool = self.tools.first().cloned().unwrap_or(Tool::Select);
-    }
-
-    #[allow(dead_code)]
-    pub fn select_tool(&mut self, tool: Tool) {
-        self.selected_tool = tool;
-    }
-
-    #[allow(dead_code)]
-    pub fn selected_tool(&self) -> &Tool {
-        &self.selected_tool
     }
 }
 
 impl Render for Toolbar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let current_mode = self.app_state.read(cx).current_mode;
+        let tools = current_mode.tools();
+
         v_flex()
             .bg(cx.theme().sidebar)
             .w(px(48.))
             .h_full()
             .p(px(4.))
             .gap(px(2.))
-            .children(self.tools.iter().map(|tool| {
+            .children(tools.iter().map(|tool| {
                 let is_selected = *tool == self.selected_tool;
                 let icon = tool.icon();
                 div()

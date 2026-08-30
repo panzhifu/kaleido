@@ -3,20 +3,15 @@
 use gpui::*;
 use gpui_component::{ActiveTheme as _, h_flex, v_flex};
 
-use crate::modes::Mode;
+use crate::state::AppState;
 
 pub struct RightPanel {
-    mode: Mode,
+    app_state: Entity<AppState>,
 }
 
 impl RightPanel {
-    pub fn new(mode: Mode, _cx: &mut Context<Self>) -> Self {
-        Self { mode }
-    }
-
-    #[allow(dead_code)]
-    pub fn set_mode(&mut self, mode: Mode) {
-        self.mode = mode;
+    pub fn new(app_state: Entity<AppState>, _cx: &mut Context<Self>) -> Self {
+        Self { app_state }
     }
 }
 
@@ -96,5 +91,3 @@ impl Render for RightPanel {
             )
     }
 }
-
-

@@ -11,6 +11,7 @@ use crate::canvas::Canvas;
 use crate::mode_bar::ModeBar;
 use crate::modes::Mode;
 use crate::right_panel::RightPanel;
+use crate::state::{AppState, AppStateEntity};
 use crate::status_bar::StatusBar;
 use crate::toolbar::Toolbar;
 
@@ -26,6 +27,7 @@ pub struct KaleidoEditor {
     loader: AsyncImageLoader,
     #[allow(dead_code)]
     saver: BackgroundSaver,
+    app_state: AppStateEntity,
 }
 
 impl KaleidoEditor {
@@ -35,10 +37,13 @@ impl KaleidoEditor {
             .plugin(brightness_tool_plugin(), BrightnessToolConfig::default());
         app.context().plugin(invert_tool_plugin(), ());
 
-        let mode_bar = cx.new(ModeBar::new);
-        let toolbar = cx.new(|cx| Toolbar::new(Mode::default(), cx));
+        // Create shared state entity.
+        let app_state = cx.new(|_| AppState::new(Mode::default()));
+
+        let mode_bar = cx.new(|cx| ModeBar::new(app_state.clone(), cx));
+        let toolbar = cx.new(|cx| Toolbar::new(app_state.clone(), cx));
         let canvas = cx.new(Canvas::new);
-        let right_panel = cx.new(|cx| RightPanel::new(Mode::default(), cx));
+        let right_panel = cx.new(|cx| RightPanel::new(app_state.clone(), cx));
         let status_bar = cx.new(StatusBar::new);
 
         let file_codec = app.file_codec_registry();
@@ -54,6 +59,7 @@ impl KaleidoEditor {
             status_bar,
             loader,
             saver,
+            app_state,
         }
     }
 }
