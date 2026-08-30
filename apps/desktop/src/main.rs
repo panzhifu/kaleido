@@ -2,18 +2,24 @@
 
 use anyhow::Result;
 use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
-use gpui_platform::application;
+use gpui_component::Root;
 
 mod app;
-mod messages;
-mod panels;
-mod state;
-mod theme;
+mod canvas;
+mod mode_bar;
+mod modes;
+mod right_panel;
+mod status_bar;
+mod toolbar;
 
 use app::KaleidoEditor;
 
 fn main() -> Result<()> {
-    application().run(|cx: &mut App| {
+    let app = gpui_platform::application();
+
+    app.run(move |cx: &mut App| {
+        gpui_component::init(cx);
+
         let bounds = Bounds::centered(None, size(px(1200.), px(800.)), cx);
         cx.open_window(
             WindowOptions {
@@ -21,7 +27,10 @@ fn main() -> Result<()> {
                 focus: true,
                 ..Default::default()
             },
-            |_, cx| cx.new(KaleidoEditor::new),
+            |window, cx| {
+                let view = cx.new(KaleidoEditor::new);
+                cx.new(|cx| Root::new(view, window, cx))
+            },
         )
         .expect("failed to open window");
         cx.activate(true);

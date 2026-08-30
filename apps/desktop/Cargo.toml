@@ -10,7 +10,9 @@ kaleido-services = { path = "../../crates/kaleido-services" }
 kaleido-tool-brightness = { path = "../../plugins/examples/brightness" }
 kaleido-tool-invert = { path = "../../plugins/examples/invert" }
 anyhow.workspace = true
+image.workspace = true
 serde_json.workspace = true
+smallvec = "1.13"
 gpui.workspace = true
 gpui_platform.workspace = true
 gpui-component.workspace = true

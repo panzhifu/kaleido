@@ -12,9 +12,9 @@ use cordis::{Context, Result};
 use kaleido_plugin_host::WasmPluginManager;
 use kaleido_traits::{FileCodec, HistoryKeeper, ImageStore, Tool, ToolRegistry};
 
-use crate::AIAgentImpl;
-#[allow(unused_imports)]
 use crate::FileCodecRegistry;
+
+use crate::AIAgentImpl;
 use crate::cordis_plugins::{
     HistoryConfig, ai_agent_plugin, file_codec_plugin, file_codec_registry_plugin,
     history_keeper_plugin, image_store_plugin, wasm_plugin_manager_plugin,

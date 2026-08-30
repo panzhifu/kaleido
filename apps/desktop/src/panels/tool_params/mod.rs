@@ -1,9 +1,7 @@
 //! Tool parameters panel.
 
 use gpui::*;
-#[allow(unused_imports)]
 use gpui::prelude::*;
-#[allow(unused_imports)]
 use std::sync::Arc;
 
 use kaleido_traits::ToolRegistry;

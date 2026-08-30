@@ -3884,12 +3884,14 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "gpui_platform",
+ "image",
  "kaleido-core",
  "kaleido-services",
  "kaleido-tool-brightness",
  "kaleido-tool-invert",
  "kaleido-traits",
  "serde_json",
+ "smallvec",
 ]
 
 [[package]]
