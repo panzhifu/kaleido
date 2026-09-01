@@ -4,8 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+tracing.workspace = true
 thiserror.workspace = true
-serde.workspace = true
+serde = { workspace = true, features = ["derive", "rc"] }
+serde_json.workspace = true
 wide.workspace = true
 
 [dev-dependencies]

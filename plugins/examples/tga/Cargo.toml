@@ -1,0 +1,12 @@
+[package]
+name = "kaleido-format-tga"
+version.workspace = true
+edition.workspace = true
+description = "TGA format plugin for Kaleido"
+
+[dependencies]
+kaleido-core = { path = "../../../crates/kaleido-core" }
+kaleido-traits = { path = "../../../crates/kaleido-traits" }
+cordis-rs.workspace = true
+tracing.workspace = true
+anyhow.workspace = true

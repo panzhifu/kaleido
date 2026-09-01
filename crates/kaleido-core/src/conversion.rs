@@ -1,14 +1,20 @@
 //! Pixel I/O helpers and SIMD-accelerated tile format conversion.
 //!
-//! All conversion kernels operate on a single tile (128×128 pixels) at a time.
+//! All conversion kernels operate on a single tile (256×256 pixels) at a time.
 //! Six common format pairs have SIMD-accelerated fast paths; everything else
 //! falls back to a generic per-pixel loop.
+//!
+//! The SIMD kernels index byte arrays by loop variable and use fixed-size
+//! `chunks_exact` — the lane layouts are explicit and the scalar tails share
+//! the same index math, so the iterator-rewrites clippy suggests would
+//! obscure the SIMD structure.
+#![allow(clippy::needless_range_loop, clippy::chunks_exact_to_as_chunks)]
 
 use wide::u32x8;
 
-use crate::error::ImageResult;
-use crate::pixel::{Pixel, PixelFormat};
-use crate::tile_core::{Tile, TILE_SIZE};
+use super::error::ImageResult;
+use super::pixel::{Pixel, PixelFormat};
+use super::tile_core::{Tile, TILE_SIZE};
 
 // ---------------------------------------------------------------------------
 // Pixel I/O helpers
@@ -126,9 +132,9 @@ fn convert_rgba8_to_gray8(src: &[u8], dst: &mut [u8]) {
     let total_px = src.len() / 4;
     let simd_px = total_px & !7;
 
-    let coeff_r = u32x8::splat(13936u32);
-    let coeff_g = u32x8::splat(46871u32);
-    let coeff_b = u32x8::splat(4732u32);
+    let coeff_r = u32x8::splat(13933u32);
+    let coeff_g = u32x8::splat(46873u32);
+    let coeff_b = u32x8::splat(4730u32);
 
     let src_chunks = src.chunks_exact(8 * 4);
     let dst_chunks = dst.chunks_exact_mut(8);
@@ -173,12 +179,14 @@ fn convert_rgba8_to_gray8(src: &[u8], dst: &mut [u8]) {
         }
     }
 
+    // Scalar tail — must use the same 65536-scale coefficients as the SIMD
+    // bulk so a tile never shows a luminance seam at its final partial chunk.
     for i in simd_px..total_px {
         let off = i * 4;
         let r = src[off] as u32;
         let g = src[off + 1] as u32;
         let b = src[off + 2] as u32;
-        let gray = (2126 * r + 7152 * g + 722 * b) / 10000;
+        let gray = (13933 * r + 46873 * g + 4730 * b) >> 16;
         dst[i] = gray as u8;
     }
 }
@@ -255,9 +263,9 @@ fn convert_rgba8_to_graya8(src: &[u8], dst: &mut [u8]) {
     let total_px = src.len() / 4;
     let simd_px = total_px & !7;
 
-    let coeff_r = u32x8::splat(13936u32);
-    let coeff_g = u32x8::splat(46871u32);
-    let coeff_b = u32x8::splat(4732u32);
+    let coeff_r = u32x8::splat(13933u32);
+    let coeff_g = u32x8::splat(46873u32);
+    let coeff_b = u32x8::splat(4730u32);
 
     let src_chunks = src.chunks_exact(32);
     let dst_chunks = dst.chunks_exact_mut(16);
@@ -294,7 +302,7 @@ fn convert_rgba8_to_graya8(src: &[u8], dst: &mut [u8]) {
         let r = src[src_off] as u32;
         let g = src[src_off + 1] as u32;
         let b = src[src_off + 2] as u32;
-        let gray = (2126 * r + 7152 * g + 722 * b) / 10000;
+        let gray = (13933 * r + 46873 * g + 4730 * b) >> 16;
         let dst_off = i * 2;
         dst[dst_off] = gray as u8;
         dst[dst_off + 1] = src[src_off + 3];
@@ -421,5 +429,37 @@ mod tests {
         assert_eq!(align_stride(40, 32), 64);
         assert_eq!(align_stride(64, 32), 64);
         assert_eq!(align_stride(1, 32), 32);
+    }
+
+    #[test]
+    fn test_luminance_white_is_255_and_consistent() {
+        // Pure white must map to 255 (not 254).
+        let white = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::rgb(255, 255, 255)).unwrap();
+        let gray = white.convert(PixelFormat::Gray8).unwrap();
+        assert_eq!(gray.get_pixel(0, 0).r, 255);
+        assert_eq!(Pixel::rgb(255, 255, 255).luminance(), 255);
+
+        // The SIMD bulk and the scalar tail must agree for every pixel of a
+        // tile: a uniform image converts to a uniform result (no seams).
+        let mut img = TiledImage::with_color(128, 128, PixelFormat::Rgba8, Pixel::rgb(0, 0, 0)).unwrap();
+        let mut v = 0u32;
+        for y in 0..128u32 {
+            for x in 0..128u32 {
+                let px = Pixel::new((v & 0xFF) as u8, ((v >> 3) & 0xFF) as u8, ((v >> 6) & 0xFF) as u8, 255);
+                img.set_pixel(x, y, px);
+                v = v.wrapping_mul(1664525).wrapping_add(1013904223);
+            }
+        }
+        let gray = img.convert(PixelFormat::Gray8).unwrap();
+        // Compare against the scalar formula applied directly.
+        let mut v = 0u32;
+        for y in 0..128u32 {
+            for x in 0..128u32 {
+                let px = Pixel::new((v & 0xFF) as u8, ((v >> 3) & 0xFF) as u8, ((v >> 6) & 0xFF) as u8, 255);
+                let expected = (13933 * px.r as u32 + 46873 * px.g as u32 + 4730 * px.b as u32) >> 16;
+                assert_eq!(gray.get_pixel(x, y).r as u32, expected);
+                v = v.wrapping_mul(1664525).wrapping_add(1013904223);
+            }
+        }
     }
 }

@@ -7,22 +7,62 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::conversion::{convert_tile, read_pixel, write_pixel};
-use crate::error::{ImageError, ImageResult};
-use crate::pixel::{div_ceil, ImageMetadata, Pixel, PixelFormat};
-use crate::tile_core::{Tile, TileCoord, TILE_SIZE};
+use super::conversion::{convert_tile, write_pixel};
+use super::error::{ImageError, ImageResult};
+use super::pixel::{div_ceil, ImageMetadata, Pixel, PixelFormat};
+use super::tile_core::{Tile, TileCoord, TILE_SIZE};
 
 /// A tile-based image.
 ///
 /// Only tiles that have been written to are present in the map.  Reading
 /// from an absent tile returns fully-transparent black.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct TiledImage {
     width: u32,
     height: u32,
     format: PixelFormat,
     tiles: HashMap<TileCoord, Tile>,
     pub(crate) metadata: ImageMetadata,
+}
+
+impl serde::Serialize for TiledImage {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("TiledImage", 5)?;
+        state.serialize_field("width", &self.width)?;
+        state.serialize_field("height", &self.height)?;
+        state.serialize_field("format", &self.format)?;
+        state.serialize_field("tiles", &self.tiles)?;
+        state.serialize_field("metadata", &self.metadata)?;
+        state.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for TiledImage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct TiledImageData {
+            width: u32,
+            height: u32,
+            format: PixelFormat,
+            tiles: HashMap<TileCoord, Tile>,
+            metadata: ImageMetadata,
+        }
+        let data = TiledImageData::deserialize(deserializer)?;
+        Ok(Self {
+            width: data.width,
+            height: data.height,
+            format: data.format,
+            tiles: data.tiles,
+            metadata: data.metadata,
+        })
+    }
 }
 
 impl std::fmt::Debug for TiledImage {
@@ -166,19 +206,6 @@ impl TiledImage {
 
         Self::from_data(width, height, format, packed)
     }
-
-    /// Creates a new image with row stride aligned to the given byte boundary.
-    pub fn with_aligned_stride(
-        width: u32,
-        height: u32,
-        format: PixelFormat,
-        _alignment: u32,
-    ) -> ImageResult<Self> {
-        if width == 0 || height == 0 {
-            return Err(ImageError::InvalidDimensions { width, height });
-        }
-        Self::with_color(width, height, format, Pixel::new(0, 0, 0, 0))
-    }
 }
 
 // -- Accessors ----------------------------------------------------------------
@@ -231,11 +258,6 @@ impl TiledImage {
             self.tiles.insert(coord, Tile::new(self.format));
         }
         self.tiles.get_mut(&coord).unwrap()
-    }
-
-    /// Returns the byte offset into the data buffer.
-    pub const fn offset(&self) -> usize {
-        0
     }
 
     /// Returns a reference to the metadata.
@@ -304,6 +326,33 @@ impl TiledImage {
     /// Returns `true` if the underlying data buffers are shared with clones.
     pub fn is_shared(&self) -> bool {
         self.tiles.values().any(|t| t.is_shared())
+    }
+
+    // -- Dirty-tile tracking (feeds the incremental renderer) ---------------
+
+    /// Coordinates of tiles marked dirty since the last render pass.
+    pub fn dirty_tile_coords(&self) -> impl Iterator<Item = TileCoord> + '_ {
+        self.tiles
+            .iter()
+            .filter(|(_, t)| t.is_dirty())
+            .map(|(c, _)| *c)
+    }
+
+    /// Number of dirty tiles.
+    pub fn dirty_tile_count(&self) -> usize {
+        self.tiles.values().filter(|t| t.is_dirty()).count()
+    }
+
+    /// Whether any tile is dirty.
+    pub fn has_dirty_tiles(&self) -> bool {
+        self.tiles.values().any(|t| t.is_dirty())
+    }
+
+    /// Clears the dirty flag on every tile (call after compositing).
+    pub fn clear_dirty(&self) {
+        for t in self.tiles.values() {
+            t.clear_dirty();
+        }
     }
 }
 
@@ -406,6 +455,10 @@ impl TiledImage {
         let tile_row_end = (max_y - 1) / TILE_SIZE;
 
         let format = self.format;
+        let mut pattern = [0u8; 8];
+        write_pixel(&mut pattern[..bpp], format, pixel);
+        let pattern = &pattern[..bpp];
+
         for tc in tile_col_start..=tile_col_end {
             for tr in tile_row_start..=tile_row_end {
                 let tile_origin_x = tc * TILE_SIZE;
@@ -420,9 +473,13 @@ impl TiledImage {
                 let data = tile.data_mut();
 
                 for ly in local_y_start..local_y_end {
-                    for lx in local_x_start..local_x_end {
-                        let off = (ly as usize * TILE_SIZE as usize + lx as usize) * bpp;
-                        write_pixel(&mut data[off..off + bpp], format, pixel);
+                    let mut off = (ly as usize * TILE_SIZE as usize + local_x_start as usize) * bpp;
+                    let end = (ly as usize * TILE_SIZE as usize + local_x_end as usize) * bpp;
+                    // Repeatedly stamp the pixel pattern over the span.
+                    while off < end {
+                        let n = (end - off).min(pattern.len());
+                        data[off..off + n].copy_from_slice(&pattern[..n]);
+                        off += n;
                     }
                 }
             }
@@ -500,6 +557,73 @@ impl TiledImage {
     }
 }
 
+// -- Row helpers (used by crop / copy / export) -------------------------------
+
+impl TiledImage {
+    /// Copies `width` pixels of image row `y` starting at `x` into `out`.
+    ///
+    /// The row may span up to two tiles horizontally; absent tiles read as
+    /// transparent black.  `out` must hold `width * bpp` bytes.
+    fn copy_row_to_buffer(&self, x: u32, y: u32, width: u32, out: &mut [u8]) {
+        let bpp = self.format.bytes_per_pixel();
+        let mut remaining = width;
+        let mut cur_x = x;
+        let mut out_off = 0;
+
+        while remaining > 0 {
+            let col = cur_x / TILE_SIZE;
+            let row = y / TILE_SIZE;
+            let local_x = cur_x % TILE_SIZE;
+            let avail = (TILE_SIZE - local_x).min(remaining);
+            let bytes = avail as usize * bpp;
+
+            match self.tiles.get(&TileCoord::new(col, row)) {
+                Some(tile) => {
+                    let local_y = y % TILE_SIZE;
+                    let src_off = (local_y as usize * TILE_SIZE as usize + local_x as usize) * bpp;
+                    out[out_off..out_off + bytes]
+                        .copy_from_slice(&tile.data()[src_off..src_off + bytes]);
+                }
+                None => {
+                    // Absent tile → transparent black.
+                    out[out_off..out_off + bytes].fill(0);
+                }
+            }
+
+            out_off += bytes;
+            cur_x += avail;
+            remaining -= avail;
+        }
+    }
+
+    /// Writes `width` pixels of `buf` into image row `y` starting at `x`,
+    /// allocating tiles as needed.
+    fn write_row_to_buffer(&mut self, x: u32, y: u32, width: u32, buf: &[u8]) {
+        let bpp = self.format.bytes_per_pixel();
+        let mut remaining = width;
+        let mut cur_x = x;
+        let mut in_off = 0;
+
+        while remaining > 0 {
+            let col = cur_x / TILE_SIZE;
+            let row = y / TILE_SIZE;
+            let local_x = cur_x % TILE_SIZE;
+            let local_y = y % TILE_SIZE;
+            let avail = (TILE_SIZE - local_x).min(remaining);
+
+            let tile = self.get_or_create_tile(col, row);
+            let data = tile.data_mut();
+            let dst_off = (local_y as usize * TILE_SIZE as usize + local_x as usize) * bpp;
+            let bytes = avail as usize * bpp;
+            data[dst_off..dst_off + bytes].copy_from_slice(&buf[in_off..in_off + bytes]);
+
+            in_off += bytes;
+            cur_x += avail;
+            remaining -= avail;
+        }
+    }
+}
+
 // -- Data operations ----------------------------------------------------------
 
 impl TiledImage {
@@ -529,22 +653,54 @@ impl TiledImage {
     }
 
     /// Returns a tightly-packed RGBA8 copy of the pixel data.
+    ///
+    /// Uses per-tile format conversion plus row memcpy — one conversion per
+    /// tile instead of a per-pixel get/set loop.
     pub fn to_rgba_vec(&self) -> Vec<u8> {
-        let mut result = Vec::with_capacity(self.width as usize * self.height as usize * 4);
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let px = unsafe { self.get_pixel_unchecked(x, y) };
-                result.push(px.r);
-                result.push(px.g);
-                result.push(px.b);
-                result.push(px.a);
+        let w = self.width as usize;
+        let h = self.height as usize;
+        let mut result = vec![0u8; w * h * 4];
+
+        if self.format == PixelFormat::Rgba8 {
+            for (&coord, tile) in &self.tiles {
+                let base_x = coord.col as usize * TILE_SIZE as usize;
+                let base_y = coord.row as usize * TILE_SIZE as usize;
+                let valid_w = (self.width - coord.col * TILE_SIZE).min(TILE_SIZE) as usize;
+                let valid_h = (self.height - coord.row * TILE_SIZE).min(TILE_SIZE) as usize;
+                let data = tile.data();
+                for y in 0..valid_h {
+                    let src_off = y * TILE_SIZE as usize * 4;
+                    let dst_off = ((base_y + y) * w + base_x) * 4;
+                    result[dst_off..dst_off + valid_w * 4]
+                        .copy_from_slice(&data[src_off..src_off + valid_w * 4]);
+                }
+            }
+        } else {
+            for (&coord, tile) in &self.tiles {
+                let converted = convert_tile(tile, PixelFormat::Rgba8)
+                    .expect("tile conversion to RGBA8 is infallible");
+                let base_x = coord.col as usize * TILE_SIZE as usize;
+                let base_y = coord.row as usize * TILE_SIZE as usize;
+                let valid_w = (self.width - coord.col * TILE_SIZE).min(TILE_SIZE) as usize;
+                let valid_h = (self.height - coord.row * TILE_SIZE).min(TILE_SIZE) as usize;
+                let data = converted.data();
+                for y in 0..valid_h {
+                    let src_off = y * TILE_SIZE as usize * 4;
+                    let dst_off = ((base_y + y) * w + base_x) * 4;
+                    result[dst_off..dst_off + valid_w * 4]
+                        .copy_from_slice(&data[src_off..src_off + valid_w * 4]);
+                }
             }
         }
+
         result
     }
 
     /// Creates a cropped copy of the image (allocates a new tiled image).
     pub fn crop(&self, x: u32, y: u32, width: u32, height: u32) -> ImageResult<Self> {
+        if width == 0 || height == 0 {
+            return Err(ImageError::InvalidDimensions { width, height });
+        }
         if x + width > self.width || y + height > self.height {
             return Err(ImageError::OutOfBounds {
                 x: x.saturating_add(width).saturating_sub(1),
@@ -555,6 +711,7 @@ impl TiledImage {
         }
 
         let mut cropped = Self::new(width, height, self.format);
+        let bpp = self.format.bytes_per_pixel();
         let cols = div_ceil(width, TILE_SIZE);
         let rows = div_ceil(height, TILE_SIZE);
 
@@ -562,25 +719,25 @@ impl TiledImage {
             for dst_col in 0..cols {
                 let dst_base_x = dst_col * TILE_SIZE;
                 let dst_base_y = dst_row * TILE_SIZE;
-                let src_base_x = x + dst_base_x;
-                let src_base_y = y + dst_base_y;
-
                 let valid_w = (width - dst_base_x).min(TILE_SIZE);
                 let valid_h = (height - dst_base_y).min(TILE_SIZE);
-                let bpp = self.format.bytes_per_pixel();
 
                 let mut buf = vec![0u8; TILE_SIZE as usize * TILE_SIZE as usize * bpp];
-
                 for dy in 0..valid_h {
-                    for dx in 0..valid_w {
-                        let src_px = self.get_pixel(src_base_x + dx, src_base_y + dy);
-                        let off = (dy as usize * TILE_SIZE as usize + dx as usize) * bpp;
-                        write_pixel(&mut buf[off..off + bpp], self.format, src_px);
-                    }
+                    let dst_off = dy as usize * TILE_SIZE as usize * bpp;
+                    let span = valid_w as usize * bpp;
+                    self.copy_row_to_buffer(
+                        x + dst_base_x,
+                        y + dst_base_y + dy,
+                        valid_w,
+                        &mut buf[dst_off..dst_off + span],
+                    );
                 }
 
-                cropped.tiles
-                    .insert(TileCoord::new(dst_col, dst_row), Tile::from_data(self.format, buf)?);
+                cropped.tiles.insert(
+                    TileCoord::new(dst_col, dst_row),
+                    Tile::from_data(self.format, buf)?,
+                );
             }
         }
 
@@ -588,12 +745,11 @@ impl TiledImage {
         Ok(cropped)
     }
 
-    /// Creates a sub-view as a new tiled image (copies data).
-    pub fn sub_view(&self, x: u32, y: u32, width: u32, height: u32) -> ImageResult<Self> {
-        self.crop(x, y, width, height)
-    }
-
     /// Copies a region from `src` into this image at the given destination.
+    ///
+    /// The source and destination rectangles are passed as separate
+    /// coordinates (a standard blit signature) — the count is intentional.
+    #[allow(clippy::too_many_arguments)]
     pub fn copy_from(
         &mut self,
         src: &TiledImage,
@@ -623,23 +779,11 @@ impl TiledImage {
             return Ok(());
         }
 
-        // Collect source pixels into a temporary buffer, then write to destination.
-        let mut tmp = Vec::with_capacity(copy_width as usize * copy_height as usize * bpp);
+        // Row-wise blit: one memcpy per row instead of a per-pixel loop.
+        let mut row = vec![0u8; copy_width as usize * bpp];
         for dy in 0..copy_height {
-            for dx in 0..copy_width {
-                let px = src.get_pixel(src_x + dx, src_y + dy);
-                let off = tmp.len();
-                tmp.extend_from_slice(&[0u8; 8]); // max bpp
-                write_pixel(&mut tmp[off..off + bpp], self.format, px);
-            }
-        }
-
-        for dy in 0..copy_height {
-            for dx in 0..copy_width {
-                let off = (dy as usize * copy_width as usize + dx as usize) * bpp;
-                let px = read_pixel(&tmp[off..off + bpp], self.format);
-                self.set_pixel(dst_x + dx, dst_y + dy, px);
-            }
+            src.copy_row_to_buffer(src_x, src_y + dy, copy_width, &mut row);
+            self.write_row_to_buffer(dst_x, dst_y + dy, copy_width, &row);
         }
 
         Ok(())
@@ -662,8 +806,39 @@ impl TiledImage {
         Ok(out)
     }
 
-    /// Converts to a packed representation as raw bytes.
-    pub fn to_packed_bytes(&self) -> Vec<u8> {
-        self.to_raw_vec()
+    /// Inverts grayscale values (v → 255 − v) across the whole canvas.
+    ///
+    /// Absent tiles read as black (0) and become white after inversion, so
+    /// this materializes the full canvas.  Intended for Gray8 masks.
+    pub fn invert_gray(&mut self) -> ImageResult<()> {
+        if self.format != PixelFormat::Gray8 {
+            return Err(ImageError::UnsupportedOperation {
+                format: self.format,
+                reason: "invert_gray requires a Gray8 image".into(),
+            });
+        }
+
+        for coord in self.tile_coords().collect::<Vec<_>>() {
+            let tile = self.get_or_create_tile(coord.col, coord.row);
+            let data = tile.data_mut();
+            for b in data.iter_mut() {
+                *b = 255 - *b;
+            }
+        }
+
+        // Materialize absent (black) tiles as white.
+        let cols = self.tile_cols();
+        let rows = self.tile_rows();
+        for row in 0..rows {
+            for col in 0..cols {
+                if !self.tiles.contains_key(&TileCoord::new(col, row)) {
+                    let mut tile = Tile::new(self.format);
+                    tile.fill(Pixel::new(255, 255, 255, 255));
+                    self.tiles.insert(TileCoord::new(col, row), tile);
+                }
+            }
+        }
+
+        Ok(())
     }
 }

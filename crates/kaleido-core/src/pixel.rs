@@ -155,9 +155,14 @@ impl Pixel {
     }
 
     /// Perceptual luminance (0-255) using the ITU-R BT.709 formula.
+    ///
+    /// Uses the same 65536-scale integer coefficients as the SIMD conversion
+    /// kernels in [`crate::conversion`], so luminance agrees exactly with
+    /// RGBA → Gray conversion (white maps to 255, black to 0).
     pub fn luminance(self) -> u8 {
-        let lum = 0.2126 * self.r as f32 + 0.7152 * self.g as f32 + 0.0722 * self.b as f32;
-        lum.clamp(0.0, 255.0) as u8
+        let lum =
+            (13933 * self.r as u32 + 46873 * self.g as u32 + 4730 * self.b as u32) >> 16;
+        lum as u8
     }
 }
 
@@ -178,7 +183,7 @@ pub const fn align_stride(stride: u32, alignment: u32) -> u32 {
 
 #[inline]
 pub(super) fn div_ceil(a: u32, b: u32) -> u32 {
-    (a + b - 1) / b
+    a.div_ceil(b)
 }
 
 // ---------------------------------------------------------------------------

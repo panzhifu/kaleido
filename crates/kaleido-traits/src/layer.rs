@@ -1,192 +1,92 @@
-//! Layer contracts: [`LayerId`], [`BlendMode`], [`LayerInfo`] and the
-//! [`LayerStore`] gateway that plugins use to inspect and modify the
-//! document's layer stack.
+//! The **layer manager** — scene-graph layer operations.
 //!
-//! The heavy [`Layer`] / [`LayerStack`] structures live in
-//! `kaleido-services`; this module only holds the *shared data types* and
-//! the plugin-facing **contract**. Hosts implement [`LayerStore`] and
-//! register it as a Cordis service; plugins receive it through
-//! [`Tool::apply_to_document`] / [`LayerToolContext`].
+//! Layers are [`kaleido_core::scene::Node`]s in the document's scene graph (pixel
+//! layers, groups, vector objects, text objects). All mutations go through
+//! the injected [`super::data::data::DataService`]'s single write path, so
+//! every layer operation is automatically undoable.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use serde::{Deserialize, Serialize};
 
-use kaleido_core::{ImageResult, Pixel, TiledImage};
+use super::ServiceResult;
+use kaleido_core::{BlendMode, NodeId, Transform2D};
 
-// ---------------------------------------------------------------------------
-// LayerId
-// ---------------------------------------------------------------------------
-
-/// Unique identifier for a layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LayerId(pub u64);
-
-static NEXT_LAYER_ID: AtomicU64 = AtomicU64::new(1);
-
-impl LayerId {
-    /// Allocates a fresh, globally unique layer id.
-    pub fn new() -> Self {
-        Self(NEXT_LAYER_ID.fetch_add(1, Ordering::SeqCst))
-    }
-}
-
-impl Default for LayerId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// BlendMode
-// ---------------------------------------------------------------------------
-
-/// Layer blend modes.
-///
-/// The blending *math* lives in `kaleido-services` (scalar `blend::blend`
-/// and the SIMD kernels); this enum is the contract both sides share.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BlendMode {
-    /// Normal blending (alpha compositing).
-    Normal,
-    /// Multiply: result = src * dst / 255.
-    Multiply,
-    /// Screen: result = 255 - (255-src)*(255-dst)/255.
-    Screen,
-    /// Overlay: multiply for dark dst, screen for light dst.
-    Overlay,
-    /// Darken: result = min(src, dst).
-    Darken,
-    /// Lighten: result = max(src, dst).
-    Lighten,
-    /// Color Dodge: result = dst / (1 - src).
-    ColorDodge,
-    /// Color Burn: result = 1 - (1 - dst) / src.
-    ColorBurn,
-    /// Hard Light: like Overlay but with src and dst swapped.
-    HardLight,
-    /// Soft Light: gentle contrast adjustment.
-    SoftLight,
-    /// Difference: result = |src - dst|.
-    Difference,
-    /// Exclusion: softer version of Difference.
-    Exclusion,
-}
-
-impl Default for BlendMode {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
-
-// ---------------------------------------------------------------------------
-// LayerInfo — a lightweight, plugin-friendly description of a layer
-// ---------------------------------------------------------------------------
-
-/// Read-only snapshot of a layer, safe to hand to plugins and UI code.
-///
-/// Unlike the internal [`Layer`] (which owns a [`TiledImage`] or an
-/// adjustment node), [`LayerInfo`] only carries the display properties.
-#[derive(Debug, Clone, PartialEq)]
+/// Information about a layer node.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LayerInfo {
-    /// Unique identifier.
-    pub id: LayerId,
-    /// Display name.
+    /// Node id.
+    pub id: NodeId,
+    /// Layer name.
     pub name: String,
     /// Whether the layer is visible.
     pub visible: bool,
-    /// Opacity (0.0 = fully transparent, 1.0 = fully opaque).
+    /// Layer opacity (0.0 – 1.0).
     pub opacity: f32,
-    /// Blend mode used when compositing.
+    /// Blend mode.
     pub blend_mode: BlendMode,
-    /// Whether this is a pixel layer (vs. an adjustment layer).
-    pub is_pixels: bool,
+    /// Whether the layer is locked.
+    pub locked: bool,
+    /// Whether this node is a group.
+    pub is_group: bool,
 }
 
-// ---------------------------------------------------------------------------
-// LayerStore — the plugin-facing gateway to the document layer stack
-// ---------------------------------------------------------------------------
+/// The layer management service.
+pub trait LayerService: Send + Sync + 'static {
+    // ── Creation / Removal ─────────────────────────────────────────────
 
-/// Host-provided service that manages the document's layer stack.
-///
-/// Plugins receive an implementation through their tool's
-/// [`LayerToolContext`] (or resolve it from the Cordis context directly).
-/// Every mutating method re-composites and publishes the result to the
-/// image store, so the canvas updates automatically.
-pub trait LayerStore: Send + Sync + 'static {
-    /// Returns a snapshot of all layers, bottom to top.
-    fn layers(&self) -> Vec<LayerInfo>;
+    /// Adds a blank pixel layer under the scene root and returns its id.
+    fn add_pixel_layer(
+        &self,
+        name: &str,
+        width: u32,
+        height: u32,
+        format: kaleido_core::PixelFormat,
+    ) -> ServiceResult<NodeId>;
 
-    /// Returns the number of layers.
-    fn layer_count(&self) -> usize {
-        self.layers().len()
-    }
+    /// Adds an empty group node under the scene root.
+    fn add_group(&self, name: &str) -> ServiceResult<NodeId>;
 
-    /// Returns the id of the active (editable) layer, if any.
-    fn active_layer(&self) -> Option<LayerId>;
+    /// Removes a node and its whole subtree.
+    fn remove(&self, id: NodeId) -> ServiceResult<()>;
 
-    /// Replaces the whole document with a single background layer.
-    ///
-    /// Called by hosts when a file is opened: the loaded image becomes the
-    /// background layer and is immediately published to the image store.
-    fn import_image(&self, name: &str, image: TiledImage) -> ImageResult<()>;
+    // ── Structure ──────────────────────────────────────────────────────
 
-    /// Makes the given layer the active (editable) layer.
-    fn set_active_layer(&self, id: LayerId) -> ImageResult<()>;
+    /// Renames a node.
+    fn rename(&self, id: NodeId, name: &str) -> ServiceResult<()>;
 
-    /// Adds an empty (transparent) pixel layer on top and returns its id.
-    fn add_pixel_layer(&self, name: &str) -> ImageResult<LayerId>;
+    /// Moves a child to `to_index` within its parent's paint order (0 = bottom).
+    fn reorder(&self, child: NodeId, to_index: usize) -> ServiceResult<()>;
 
-    /// Adds a fully opaque solid-colour pixel layer on top.
-    fn add_solid_layer(&self, name: &str, color: Pixel) -> ImageResult<LayerId>;
+    /// Reparents a node under a new parent.
+    fn reparent(&self, id: NodeId, new_parent: NodeId) -> ServiceResult<()>;
 
-    /// Removes a layer by id.
-    fn remove_layer(&self, id: LayerId) -> ImageResult<()>;
+    // ── Styling ────────────────────────────────────────────────────────
 
-    /// Moves the layer at `from` to `to` (indices are bottom-to-top).
-    fn reorder(&self, from: usize, to: usize) -> ImageResult<()>;
+    /// Toggles a node's visibility.
+    fn set_visible(&self, id: NodeId, visible: bool) -> ServiceResult<()>;
 
-    /// Sets the opacity (0.0..=1.0) of a layer.
-    fn set_opacity(&self, id: LayerId, opacity: f32) -> ImageResult<()>;
+    /// Sets a node's opacity (0.0 – 1.0); out-of-range values are clamped.
+    fn set_opacity(&self, id: NodeId, opacity: f32) -> ServiceResult<()>;
 
-    /// Shows / hides a layer.
-    fn set_visible(&self, id: LayerId, visible: bool) -> ImageResult<()>;
+    /// Sets a node's blend mode.
+    fn set_blend(&self, id: NodeId, blend: BlendMode) -> ServiceResult<()>;
 
-    /// Sets the blend mode of a layer.
-    fn set_blend_mode(&self, id: LayerId, mode: BlendMode) -> ImageResult<()>;
+    /// Sets a node's transform (translate / rotate / scale).
+    fn set_transform(&self, id: NodeId, transform: Transform2D) -> ServiceResult<()>;
 
-    /// Renames a layer.
-    fn set_layer_name(&self, id: LayerId, name: &str) -> ImageResult<()>;
+    // ── Queries ────────────────────────────────────────────────────────
 
-    /// Lets the caller draw into the active layer's pixel buffer.
-    ///
-    /// The closure receives the active layer's [`TiledImage`] and may
-    /// mutate it freely. The result is re-composited and published.
-    fn edit_active_layer(&self, f: &mut dyn FnMut(&mut TiledImage)) -> ImageResult<()>;
+    /// Direct children of a node, in paint order (bottom first).
+    fn children(&self, id: NodeId) -> ServiceResult<Vec<NodeId>>;
 
-    /// Composites all visible layers and returns the flattened image.
-    ///
-    /// The host also publishes this result to the image store so the
-    /// canvas shows the latest state.
-    fn composite(&self) -> ImageResult<TiledImage>;
+    /// A snapshot of a layer's info (or `None` if missing).
+    fn layer(&self, id: NodeId) -> ServiceResult<Option<LayerInfo>>;
 
-    /// Returns the document size in pixels.
-    fn document_size(&self) -> (u32, u32);
-}
+    /// Number of nodes in the scene (including the root).
+    fn layer_count(&self) -> ServiceResult<usize>;
 
-// ---------------------------------------------------------------------------
-// LayerToolContext — passed to tools that operate on the document
-// ---------------------------------------------------------------------------
+    /// The currently active layer id, if any.
+    fn active_layer(&self) -> Option<NodeId>;
 
-/// Context handed to [`crate::Tool::apply_to_document`] implementations.
-///
-/// Provides access to the document's [`LayerStore`] so a tool can inspect
-/// the stack, add/remove/reorder layers, and draw into the active layer.
-pub trait LayerToolContext {
-    /// The document's layer store.
-    fn layer_store(&self) -> &dyn LayerStore;
-
-    /// Document width in pixels.
-    fn document_width(&self) -> u32;
-
-    /// Document height in pixels.
-    fn document_height(&self) -> u32;
+    /// Sets the active layer.
+    fn set_active(&self, id: NodeId) -> ServiceResult<()>;
 }

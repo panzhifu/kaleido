@@ -3857,8 +3857,6 @@ dependencies = [
  "clap",
  "kaleido-core",
  "kaleido-services",
- "kaleido-tool-brightness",
- "kaleido-tool-invert",
  "kaleido-traits",
  "serde_json",
  "tokio",
@@ -3871,7 +3869,9 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "serde",
+ "serde_json",
  "thiserror 2.0.20",
+ "tracing",
  "wide",
 ]
 
@@ -3881,35 +3881,29 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "gpui",
+ "gpui-base",
  "gpui-component",
  "gpui-component-assets",
  "gpui_platform",
  "image",
  "kaleido-core",
  "kaleido-services",
- "kaleido-tool-brightness",
- "kaleido-tool-brush",
- "kaleido-tool-invert",
- "kaleido-tool-solid-layer",
  "kaleido-traits",
  "serde_json",
  "smallvec",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
-name = "kaleido-plugin-host"
+name = "kaleido-format-tga"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "cordis-rs",
  "kaleido-core",
- "kaleido-sdk",
  "kaleido-traits",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
  "tracing",
- "wasmtime",
 ]
 
 [[package]]
@@ -3931,9 +3925,9 @@ dependencies = [
  "cordis-rs",
  "criterion",
  "crossbeam-channel",
+ "dirs",
  "image",
  "kaleido-core",
- "kaleido-plugin-host",
  "kaleido-sdk",
  "kaleido-traits",
  "rayon",
@@ -3942,45 +3936,8 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "wasmtime",
  "wide",
-]
-
-[[package]]
-name = "kaleido-tool-brightness"
-version = "0.1.0"
-dependencies = [
- "cordis-rs",
- "kaleido-core",
- "kaleido-traits",
- "serde_json",
-]
-
-[[package]]
-name = "kaleido-tool-brush"
-version = "0.1.0"
-dependencies = [
- "kaleido-core",
- "kaleido-traits",
- "serde_json",
-]
-
-[[package]]
-name = "kaleido-tool-invert"
-version = "0.1.0"
-dependencies = [
- "cordis-rs",
- "kaleido-core",
- "kaleido-traits",
- "serde_json",
-]
-
-[[package]]
-name = "kaleido-tool-solid-layer"
-version = "0.1.0"
-dependencies = [
- "kaleido-core",
- "kaleido-traits",
- "serde_json",
 ]
 
 [[package]]
@@ -4362,6 +4319,15 @@ dependencies = [
  "markup5ever",
  "tendril",
  "xml5ever",
+]
+
+[[package]]
+name = "matchers"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
+dependencies = [
+ "regex-automata",
 ]
 
 [[package]]
@@ -6795,6 +6761,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "simple_format"
+version = "0.1.0"
+
+[[package]]
 name = "simplecss"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7705,10 +7675,14 @@ version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb7f578e5945fb242538965c2d0b04418d38ec25c79d160cd279bf0731c8d319"
 dependencies = [
+ "matchers",
  "nu-ansi-term",
+ "once_cell",
+ "regex-automata",
  "sharded-slab",
  "smallvec",
  "thread_local",
+ "tracing",
  "tracing-core",
  "tracing-log",
 ]

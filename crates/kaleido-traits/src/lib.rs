@@ -1,20 +1,49 @@
+// ── Modules — one folder per trait ────────────────────────────────────────
+//
+// Service-layer contracts (13 services, each in its own module/folder):
+pub mod color;
+pub mod data;
+pub mod history;
+pub mod keyboard;
+pub mod layer;
+pub mod plugin;
+pub mod render;
+pub mod selection;
+
+// Service-layer contracts (12 managers):
+pub mod services;
+
+// Legacy / cross-cutting trait modules:
 pub mod ai_agent;
 pub mod analysis_tool;
 pub mod category;
 pub mod cursor;
 pub mod events;
-pub mod file_codec;
 pub mod history_keeper;
 pub mod image_store;
 pub mod interactive_tool;
-pub mod keyboard;
-pub mod layer;
 pub mod panel;
 pub mod selection_tool;
 pub mod tool;
 
 // ── Re-exports ────────────────────────────────────────────────────────────
-// Core contracts (always available, no extra deps)
+
+pub use data::{DataService, ServiceError, ServiceResult};
+pub use data::codec::{CodecCapability, FileCodecRegistry, FormatCodec, ImageFormat};
+pub use history::{HistoryEntry as HistorySvcEntry, HistoryService};
+pub use layer::{LayerInfo, LayerService};
+pub use plugin::{PluginError, PluginInfo, PluginKind, PluginResult, PluginService};
+pub use color::ColorService;
+pub use render::RenderService;
+pub use selection::SelectionService;
+
+// ── Re-exports from services/ ─────────────────────────────────────────
+
+pub use services::app::AppService;
+pub use services::resource::{ResourceData, ResourceKind, ResourceService};
+pub use services::task::{TaskId, TaskService, TaskStatus};
+pub use services::ui::{UiService, MAX_NOTIFICATIONS};
+
 pub use ai_agent::*;
 pub use analysis_tool::{AnalysisResult, AnalysisTool};
 pub use category::ToolCategory;
@@ -28,17 +57,18 @@ pub use events::{
     PluginUninstalledEvent, SELECTION_CHANGED, SelectionBounds, SelectionChangedEvent,
     TOOL_UPGRADED, ToolUpgradedEvent,
 };
-pub use file_codec::{FileCodec, ImageFormat};
+
 pub use history_keeper::{Command, HistoryEntry, HistoryError, HistoryKeeper, HistoryResult};
 pub use image_store::ImageStore;
 pub use interactive_tool::{
     InteractiveTool, Modifiers, PointerButtons, PointerEvent, PointerKind, ToolContext,
 };
-pub use keyboard::{KeyCode, KeyEvent, KeyModifiers, KeyState};
-pub use layer::{BlendMode, LayerId, LayerInfo, LayerStore, LayerToolContext};
-pub use panel::{
-    Panel, PanelButton, PanelContext, PanelElement, PanelRegistry, PanelSection,
+pub use keyboard::{
+    KeyCode, KeyEvent, KeyModifiers, KeyState, NoOverride, OverrideResult, ShortcutBinding,
+    ShortcutError, ShortcutRegisterResult, ShortcutRegistry, ShortcutService, ShortcutSource,
+    ToolShortcutOverride, resolve_key,
 };
+pub use panel::{Panel, PanelButton, PanelContext, PanelElement, PanelRegistry, PanelSection};
 pub use selection_tool::{Selection, SelectionMode, SelectionTool};
 pub use tool::{
     NumericConstraints, ParamSchema, ParamType, Tool, ToolParams, ToolRegistry, ToolSchema,
