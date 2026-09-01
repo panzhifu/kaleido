@@ -10,7 +10,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use cordis::{Inject, PluginHandle};
-use kaleido_traits::{Panel, PanelRegistry};
+use kaleido_traits::plugins::panel::{Panel, PanelRegistry};
 
 /// Resolves the panel registry from a Cordis context.
 pub fn resolve_panel_registry(
@@ -131,7 +131,7 @@ pub fn panel_registry_plugin() -> PluginHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kaleido_traits::PanelContext;
+    use kaleido_traits::plugins::panel::PanelContext;
 
     /// A minimal panel for registry tests.
     struct TestPanel;

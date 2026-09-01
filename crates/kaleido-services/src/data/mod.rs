@@ -13,7 +13,8 @@ use kaleido_core::{Document, DocumentId, ImageSize, NodeContent, PixelLayer};
 pub mod format;
 
 use kaleido_traits::data::{DataService, ServiceError, ServiceResult};
-use kaleido_traits::{FileCodecRegistry, ImageClearedEvent, ImageLoadedEvent, ImageSavedEvent, KaleidoEmitter};
+use kaleido_traits::data::codec::FileCodecRegistry;
+use kaleido_traits::plugins::events::{ImageClearedEvent, ImageLoadedEvent, ImageSavedEvent, KaleidoEmitter};
 
 // ── DataServiceImpl ───────────────────────────────────────────────────────
 

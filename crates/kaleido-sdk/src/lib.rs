@@ -9,13 +9,13 @@
 use std::sync::Arc;
 
 use cordis::{Inject, PluginHandle, PluginOutput, plugin_sync};
-use kaleido_traits::{Tool, ToolRegistry};
+use kaleido_traits::plugins::{Tool, ToolRegistry};
 
 // ---------------------------------------------------------------------------
 // Re-exports
 // ---------------------------------------------------------------------------
 
-pub use kaleido_traits::{
+pub use kaleido_traits::plugins::{
     NumericConstraints, ParamSchema, ParamType, TOOL_UPGRADED, ToolUpgradedEvent,
 };
 
@@ -181,7 +181,7 @@ macro_rules! define_tool {
 mod tests {
     use super::*;
     use kaleido_core::{ImageResult, Pixel, TiledImage};
-    use kaleido_traits::{ToolParams, ToolSchema};
+    use kaleido_traits::plugins::{ToolParams, ToolSchema};
     use serde_json::json;
 
     struct TestTool;

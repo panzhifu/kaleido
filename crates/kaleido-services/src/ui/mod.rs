@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 
 use cordis::{Context, Inject, PluginHandle, Service, service_sync};
-use kaleido_traits::panel::{Panel, PanelRegistry};
+use kaleido_traits::plugins::panel::{Panel, PanelRegistry};
 use kaleido_traits::services::ui::{UiService, MAX_NOTIFICATIONS};
 use kaleido_traits::services::ServiceResult;
 
@@ -114,7 +114,7 @@ pub fn plugin() -> PluginHandle {
 mod tests {
     use super::*;
     use crate::services::ui::panel_registry::panel_registry_plugin;
-    use kaleido_traits::PanelContext;
+    use kaleido_traits::plugins::panel::PanelContext;
 
     /// A minimal panel for registration tests.
     struct TestPanel;

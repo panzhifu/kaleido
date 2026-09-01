@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::panel::Panel;
+use crate::plugins::panel::Panel;
 
 use super::ServiceResult;
 

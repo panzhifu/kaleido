@@ -18,7 +18,10 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crate::{ImageFormat, Panel, ShortcutBinding, Tool};
+use crate::data::codec::ImageFormat;
+use crate::keyboard::ShortcutBinding;
+use crate::plugins::panel::Panel;
+use crate::plugins::tool::Tool;
 
 /// Public metadata about an installed plugin.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

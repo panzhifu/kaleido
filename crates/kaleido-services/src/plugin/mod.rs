@@ -9,9 +9,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 
 use cordis::{Context, Inject, PluginHandle, Service, service_sync};
-use kaleido_traits::{
-    FileCodecRegistry, KaleidoEmitter, PluginInstalledEvent, PluginUninstalledEvent, Tool,
-};
+use kaleido_traits::data::codec::FileCodecRegistry;
+use kaleido_traits::plugins::events::{KaleidoEmitter, PluginInstalledEvent, PluginUninstalledEvent};
+use kaleido_traits::plugins::tool::Tool;
 
 pub mod capabilities;
 pub mod wasm_host;

@@ -18,8 +18,8 @@ use std::sync::{Arc, Weak};
 use kaleido_core::{ImageError, ImageResult, TiledImage};
 use serde_json::Value;
 
-use crate::category::ToolCategory;
-use crate::cursor::CursorType;
+use crate::plugins::category::ToolCategory;
+use crate::plugins::cursor::CursorType;
 
 // ---------------------------------------------------------------------------
 // ToolParams

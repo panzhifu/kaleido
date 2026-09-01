@@ -3,26 +3,24 @@
 //! This crate defines the traits (interfaces) that `kaleido-services`
 //! implements and that plugins consume.
 
-// ── Service-layer contracts (12 managers + shared types) ─────────────────
+// ── Document-level service contracts ──────────────────────────────────────
 pub mod color;
 pub mod data;
 pub mod history;
-pub mod keyboard;
 pub mod layer;
 pub mod plugin;
 pub mod render;
 pub mod selection;
-pub mod shortcut;
 
 // ── Application-level service contracts ──────────────────────────────────
 pub mod services;
 
+// ── Keyboard / shortcut contract ─────────────────────────────────────────
+pub mod keyboard;
+pub mod shortcut;
+
 // ── Plugin contracts (traits implemented by plugins) ─────────────────────
-pub mod category;
-pub mod cursor;
-pub mod events;
-pub mod panel;
-pub mod tool;
+pub mod plugins;
 
 // ── Re-exports — document-level services ─────────────────────────────────
 
@@ -52,9 +50,9 @@ pub use keyboard::{
 
 // ── Re-exports — plugin contracts ────────────────────────────────────────
 
-pub use category::ToolCategory;
-pub use cursor::CursorType;
-pub use events::{
+pub use plugins::category::ToolCategory;
+pub use plugins::cursor::CursorType;
+pub use plugins::events::{
     AI_ACTION_EXECUTED, AI_THINKING, AiActionExecutedEvent, AiThinkingEvent, HISTORY_CHANGED,
     HistoryChangedEvent, IMAGE_CHANGED, IMAGE_CLEARED, IMAGE_LOADED, IMAGE_SAVED,
     ImageChangedEvent, ImageClearedEvent, ImageLoadedEvent, ImageSavedEvent, KaleidoEmitter,
@@ -63,8 +61,8 @@ pub use events::{
     PluginUninstalledEvent, SELECTION_CHANGED, SelectionBounds, SelectionChangedEvent,
     TOOL_UPGRADED, ToolUpgradedEvent,
 };
-pub use panel::{Panel, PanelButton, PanelContext, PanelElement, PanelRegistry, PanelSection};
-pub use tool::{
+pub use plugins::panel::{Panel, PanelButton, PanelContext, PanelElement, PanelRegistry, PanelSection};
+pub use plugins::tool::{
     NumericConstraints, ParamSchema, ParamType, Tool, ToolParams, ToolRegistry, ToolSchema,
     resolve_tool_registry,
 };
