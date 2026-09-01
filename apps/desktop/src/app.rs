@@ -92,20 +92,8 @@ impl KaleidoEditor {
 
         let (dock_area, _dock_skin) = create_dock_area(canvas.clone(), window, cx);
 
-        // Persist layout on change.
-        let dock_area_clone = dock_area.clone();
-        cx.subscribe_in(
-            &dock_area,
-            window,
-            move |_this, _dock_area, ev: &gpui_component::dock::DockEvent, _window, cx| {
-                if matches!(ev, gpui_component::dock::DockEvent::LayoutChanged) {
-                    if let Err(err) = save_layout(&dock_area_clone, cx) {
-                        tracing::warn!("failed to save dock layout: {err}");
-                    }
-                }
-            },
-        )
-        .detach();
+        // Note: Layout persistence disabled to avoid window-not-found errors.
+        // The dock layout is ephemeral per session.
 
         let status_bar = cx.new(|_cx| {
             StatusBar::new()

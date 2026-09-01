@@ -1,7 +1,6 @@
 //! Canvas — displays the current document's rendered image.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use gpui::*;
 use gpui_component::{ActiveTheme as _, StyledExt as _};
@@ -17,6 +16,8 @@ pub struct Canvas {
     image_path: Option<PathBuf>,
     /// Whether a document is currently loaded.
     has_document: bool,
+    /// Version counter to avoid redundant refreshes.
+    last_refresh_version: u64,
 }
 
 impl Canvas {
@@ -26,6 +27,7 @@ impl Canvas {
             app,
             image_path: None,
             has_document: false,
+            last_refresh_version: 0,
         };
         // Initial render if document is already open.
         canvas.refresh();

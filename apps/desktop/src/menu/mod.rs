@@ -64,6 +64,7 @@ impl MenuBar {
     }
 
     pub(crate) fn toggle_menu(&mut self, kind: MenuKind, cx: &mut Context<Self>) {
+        tracing::info!("MenuBar toggle_menu: {:?}", kind);
         if self.open_menu == Some(kind) {
             self.open_menu = None;
         } else {

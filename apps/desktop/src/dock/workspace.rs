@@ -46,6 +46,7 @@ fn set_default_layout(
     window: &mut Window,
     cx: &mut App,
 ) {
+    tracing::info!("set_default_layout start");
     // Left panel placeholder
     let left = DockLayout::tabs().panel_view(
         panel_handle(cx.new(|cx| PlaceholderPanel::new("Tools", "左侧工具面板", cx))),
