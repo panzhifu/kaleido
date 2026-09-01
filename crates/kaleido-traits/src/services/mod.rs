@@ -15,7 +15,7 @@ pub mod ui;
 
 // Re-export the shared error type so downstream code can write
 // `kaleido_traits::services::{ServiceError, ServiceResult}`.
-pub use self::app::AppService;
+pub use self::app::{AppService, AppSettings};
 pub use self::resource::{ResourceData, ResourceKind, ResourceService};
 pub use self::task::{TaskId, TaskService, TaskStatus};
 pub use self::ui::{UiService, MAX_NOTIFICATIONS};

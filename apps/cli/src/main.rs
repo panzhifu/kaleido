@@ -180,14 +180,35 @@ fn cmd_demo(mut app: KaleidoApp) -> anyhow::Result<()> {
     ui.notify("Demo workflow finished");
     println!("   Status: {}", ui.status());
 
-    // 11. App (app manager).
+    // 11. App (app manager) — software configuration.
     println!("11. App...");
     let app_svc = app.app_service();
     println!("    Name: {}", app_svc.name());
     println!("    Version: {}", app_svc.version());
     println!("    Mode: {}", app_svc.current_mode());
+    let settings = app_svc.settings();
+    println!("    Default canvas: {} × {}", settings.default_width, settings.default_height);
+    println!("    Undo limit: {}", settings.undo_limit);
+    println!("    Auto-save: {}s (0=disabled)", settings.auto_save_interval);
+    println!("    Plugin dirs: {:?}", settings.plugin_dirs);
+    println!("    Default mode: {}", settings.default_mode);
+
+    // Modify a single setting.
+    app_svc.set_setting("undo_limit", "100")?;
+    println!("    Updated undo_limit to: {}", app_svc.get_setting("undo_limit").unwrap());
+
+    // Switch editing mode.
     app_svc.set_mode("vector")?;
     println!("    Switched mode to: {}", app_svc.current_mode());
+
+    // Update full settings.
+    let mut new_settings = app_svc.settings();
+    new_settings.default_width = 1920;
+    new_settings.default_height = 1080;
+    app_svc.update_settings(new_settings)?;
+    println!("    Updated canvas to: {} × {}",
+        app_svc.settings().default_width,
+        app_svc.settings().default_height);
 
     // 12. Plugin (plugin manager).
     println!("12. Plugins...");

@@ -40,6 +40,8 @@ pub struct AppConfig {
     /// Initial editing mode reported by the app manager (e.g. `"pixel"`,
     /// `"vector"`, `"type"`, `"animation"`).
     pub mode: String,
+    /// Maximum number of undo steps.
+    pub undo_limit: usize,
 }
 
 impl Default for AppConfig {
@@ -47,6 +49,7 @@ impl Default for AppConfig {
         Self {
             wasm_plugin_dirs: Vec::new(),
             mode: DEFAULT_MODE.to_string(),
+            undo_limit: 50,
         }
     }
 }
@@ -135,10 +138,27 @@ impl KaleidoApp {
         let ui_service = resolve_service!(ctx, UiServiceImpl, dyn UiService, "ui_service");
         let task_service = resolve_service!(ctx, TaskServiceImpl, dyn TaskService, "task_service");
 
-        // Apply the configured editing mode to the app manager.
+        // Apply the boot configuration to the app manager.
         app_service.set_mode(&config.mode).map_err(|e| {
             cordis::CordisError::with_message(cordis::ErrorCode::Other, e.to_string())
         })?;
+        app_service
+            .set_setting("undo_limit", &config.undo_limit.to_string())
+            .map_err(|e| {
+                cordis::CordisError::with_message(cordis::ErrorCode::Other, e.to_string())
+            })?;
+        if !config.wasm_plugin_dirs.is_empty() {
+            let dirs: Vec<String> = config
+                .wasm_plugin_dirs
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect();
+            app_service
+                .set_setting("plugin_dirs", &dirs.join(","))
+                .map_err(|e| {
+                    cordis::CordisError::with_message(cordis::ErrorCode::Other, e.to_string())
+                })?;
+        }
 
         Ok(Self {
             ctx,
