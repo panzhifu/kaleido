@@ -113,7 +113,9 @@ impl Focusable for CanvasPanel {
 
 impl Render for CanvasPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.canvas.clone().into_any_element()
+        tracing::info!("CanvasPanel render");
+        // Render the canvas entity as a child element
+        div().size_full().child(self.canvas.clone())
     }
 }
 
