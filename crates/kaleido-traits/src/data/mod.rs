@@ -23,6 +23,18 @@ pub trait DataService: Send + Sync + 'static {
     /// Restores a snapshot as the current document (used by HistoryService).
     /// Not for general use — all mutations should go through the managers.
     fn restore(&self, snapshot: Document);
+
+    /// Restores from a history snapshot (full or dirty-tile).
+    fn restore_snapshot(&self, snapshot: &crate::history::Snapshot) {
+        // Default implementation: delegate to restore() for full snapshots.
+        match snapshot {
+            crate::history::Snapshot::Full(doc) => self.restore(doc.clone()),
+            crate::history::Snapshot::DirtyTile(_) => {
+                // Dirty-tile snapshots require tile-level access.
+                // Override this method for optimized dirty-tile restoration.
+            }
+        }
+    }
     // ── Lifecycle ────────────────────────────────────────────────────────
 
     /// Creates a new blank document and makes it current.

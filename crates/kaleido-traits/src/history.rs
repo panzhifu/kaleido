@@ -7,6 +7,24 @@ use serde::{Deserialize, Serialize};
 
 use super::ServiceResult;
 
+/// A history snapshot — either full-document or dirty-tile.
+#[derive(Clone)]
+pub enum Snapshot {
+    /// Full document clone (simple, memory-heavy).
+    Full(kaleido_core::Document),
+    /// Only modified tiles (memory-efficient).
+    DirtyTile(DirtyTileSnapshot),
+}
+
+/// A snapshot that stores only the tiles that were modified.
+#[derive(Clone)]
+pub struct DirtyTileSnapshot {
+    /// Map of tile coordinate → the tile's state *before* the mutation.
+    pub tiles: std::collections::HashMap<kaleido_core::TileCoord, std::sync::Arc<kaleido_core::Tile>>,
+    /// Document name before the mutation.
+    pub name: String,
+}
+
 /// A history entry — a snapshot of the document at a point in time.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistoryEntry {

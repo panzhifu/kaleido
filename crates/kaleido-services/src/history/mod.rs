@@ -1,7 +1,7 @@
 //! The **history manager** implementation.
 //!
-//! Manages undo/redo stacks. Works with [`super::data::DataService`] to
-//! capture and restore document snapshots.
+//! Manages undo/redo stacks with COW (copy-on-write) snapshots.
+//! Unmodified tiles are shared via Arc, so cloning a Document is cheap.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -11,7 +11,7 @@ use cordis::{Context, Inject, PluginHandle, Service, service_sync};
 use kaleido_core::Document;
 use kaleido_traits::data::error::{ServiceError, ServiceResult};
 use kaleido_traits::data::DataService;
-use kaleido_traits::history::{HistoryEntry, HistoryService};
+use kaleido_traits::history::{HistoryEntry, HistoryService, Snapshot};
 
 /// Maximum number of undo snapshots retained.
 const UNDO_LIMIT: usize = 100;
@@ -30,7 +30,7 @@ fn now_secs() -> i64 {
 pub struct HistoryServiceImpl {
     ctx: Context,
     data_service: Arc<dyn DataService>,
-    /// Undo stack — *before* snapshots of each mutation.
+    /// Undo stack — COW snapshots of state *before* each mutation.
     undo: RwLock<Vec<(Document, HistoryEntry)>>,
     /// Redo stack — states moved out of the way by undo.
     redo: RwLock<Vec<(Document, HistoryEntry)>>,
@@ -258,6 +258,19 @@ mod tests {
         fn restore(&self, snapshot: Document) {
             *self.doc.write().unwrap_or_else(|e| e.into_inner()) = Some(snapshot);
         }
+        fn restore_snapshot(&self, snapshot: &kaleido_traits::history::Snapshot) {
+            match snapshot {
+                kaleido_traits::history::Snapshot::Full(doc) => {
+                    *self.doc.write().unwrap_or_else(|e| e.into_inner()) = Some(doc.clone());
+                }
+                kaleido_traits::history::Snapshot::DirtyTile(dirty) => {
+                    let mut doc_guard = self.doc.write().unwrap_or_else(|e| e.into_inner());
+                    if let Some(ref mut doc) = *doc_guard {
+                        doc.name = dirty.name.clone();
+                    }
+                }
+            }
+        }
     }
 
     fn make_service() -> (HistoryServiceImpl, Arc<FakeDataService>) {
@@ -335,5 +348,51 @@ mod tests {
         }
 
         assert_eq!(svc.undo_depth(), UNDO_LIMIT);
+    }
+
+    #[test]
+    fn test_multiple_undo_redo_cycles() {
+        let (svc, fake) = make_service();
+
+        // Push 3 snapshots.
+        svc.snapshot().unwrap();
+        fake.restore(make_doc("state1"));
+        svc.snapshot().unwrap();
+        fake.restore(make_doc("state2"));
+        svc.snapshot().unwrap();
+        fake.restore(make_doc("state3"));
+
+        assert_eq!(svc.undo_depth(), 3);
+
+        // Undo all.
+        svc.undo().unwrap();
+        assert_eq!(fake.document().unwrap().unwrap().name, "state2");
+        svc.undo().unwrap();
+        assert_eq!(fake.document().unwrap().unwrap().name, "state1");
+        svc.undo().unwrap();
+
+        // Redo all.
+        svc.redo().unwrap();
+        assert_eq!(fake.document().unwrap().unwrap().name, "state1");
+        svc.redo().unwrap();
+        assert_eq!(fake.document().unwrap().unwrap().name, "state2");
+        svc.redo().unwrap();
+        assert_eq!(fake.document().unwrap().unwrap().name, "state3");
+    }
+
+    #[test]
+    fn test_new_mutation_clears_redo() {
+        let (svc, fake) = make_service();
+
+        svc.snapshot().unwrap();
+        fake.restore(make_doc("modified"));
+        svc.undo().unwrap();
+
+        // Now redo should be available.
+        assert!(svc.can_redo());
+
+        // A new snapshot should clear the redo stack.
+        svc.snapshot().unwrap();
+        assert!(!svc.can_redo());
     }
 }

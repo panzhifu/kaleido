@@ -27,7 +27,7 @@ pub mod plugins;
 pub use color::ColorService;
 pub use data::{DataService, ServiceError, ServiceResult};
 pub use data::codec::{CodecCapability, FileCodecRegistry, FormatCodec, ImageFormat};
-pub use history::{HistoryEntry as HistorySvcEntry, HistoryService};
+pub use history::{HistoryEntry as HistorySvcEntry, HistoryService, Snapshot, DirtyTileSnapshot};
 pub use layer::{LayerInfo, LayerService};
 pub use plugin::{PluginError, PluginInfo, PluginKind, PluginResult, PluginService};
 pub use render::RenderService;

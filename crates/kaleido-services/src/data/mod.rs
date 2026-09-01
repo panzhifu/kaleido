@@ -207,6 +207,25 @@ impl DataService for DataServiceImpl {
         let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
         *state = Some(snapshot);
     }
+
+    fn restore_snapshot(&self, snapshot: &kaleido_traits::history::Snapshot) {
+        match snapshot {
+            kaleido_traits::history::Snapshot::Full(doc) => {
+                self.restore(doc.clone());
+            }
+            kaleido_traits::history::Snapshot::DirtyTile(dirty) => {
+                // For dirty-tile snapshots, restore the full document state.
+                // A more optimized version would only restore affected tiles.
+                if let Ok(Some(doc)) = self.document() {
+                    let mut doc = doc;
+                    doc.name = dirty.name.clone();
+                    // TODO: Restore individual dirty tiles when Document
+                    // exposes tile-level mutation API.
+                    self.restore(doc);
+                }
+            }
+        }
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
