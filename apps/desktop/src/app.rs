@@ -188,6 +188,31 @@ impl KaleidoEditor {
             menu_bar.toggle_menu(action.0, cx);
         });
     }
+
+    fn on_menu_item(&mut self, action: &crate::menu::MenuItemAction, _window: &mut Window, cx: &mut Context<Self>) {
+        // Close the menu.
+        self.menu_bar.update(cx, |menu_bar, cx| {
+            menu_bar.toggle_menu(menu_bar.open_menu.unwrap_or(crate::menu::MenuKind::File), cx);
+        });
+
+        // Handle the action.
+        match action.0.as_str() {
+            "menu-open" => {
+                let _ = &action.0; // Use action to avoid warning
+            }
+            "menu-save" => {}
+            "menu-save-as" => {}
+            "menu-exit" => {}
+            "menu-undo" => {}
+            "menu-redo" => {}
+            "menu-zoom-in" => {}
+            "menu-zoom-out" => {}
+            "menu-fit" => {}
+            "menu-mode-pixel" | "menu-mode-vector" | "menu-mode-paint" | "menu-mode-type" | "menu-mode-animation" => {}
+            "menu-about" => {}
+            _ => {}
+        }
+    }
 }
 
 impl Render for KaleidoEditor {
@@ -206,6 +231,7 @@ impl Render for KaleidoEditor {
             .on_action(cx.listener(Self::on_save))
             .on_action(cx.listener(Self::on_save_as))
             .on_action(cx.listener(Self::on_menu_toggle))
+            .on_action(cx.listener(Self::on_menu_item))
             .child(title_bar)
             .child(
                 div()

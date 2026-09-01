@@ -6,7 +6,7 @@ use gpui_component::{h_flex, ActiveTheme as _, StyledExt as _};
 /// Menu bar component - renders inside TitleBar.
 pub struct MenuBar {
     focus_handle: FocusHandle,
-    open_menu: Option<MenuKind>,
+    pub(crate) open_menu: Option<MenuKind>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,32 +26,33 @@ const MENU_LABELS: &[(MenuKind, &str)] = &[
     (MenuKind::Help, "帮助"),
 ];
 
-const MENU_ITEMS: &[(MenuKind, &[(&str, &str)])] = &[
+/// Menu item definition: (label, shortcut, action)
+const MENU_ITEMS: &[(MenuKind, &[(&str, &str, &str)])] = &[
     (MenuKind::File, &[
-        ("打开", "ctrl-o"),
-        ("保存", "ctrl-s"),
-        ("另存为", "ctrl-shift-s"),
-        ("─", ""),
-        ("退出", ""),
+        ("打开", "ctrl-o", "menu-open"),
+        ("保存", "ctrl-s", "menu-save"),
+        ("另存为", "ctrl-shift-s", "menu-save-as"),
+        ("─", "", ""),
+        ("退出", "", "menu-exit"),
     ]),
     (MenuKind::Edit, &[
-        ("撤销", "ctrl-z"),
-        ("重做", "ctrl-shift-z"),
+        ("撤销", "ctrl-z", "menu-undo"),
+        ("重做", "ctrl-shift-z", "menu-redo"),
     ]),
     (MenuKind::View, &[
-        ("放大", "ctrl-="),
-        ("缩小", "ctrl--"),
-        ("适应窗口", ""),
+        ("放大", "ctrl-=", "menu-zoom-in"),
+        ("缩小", "ctrl--", "menu-zoom-out"),
+        ("适应窗口", "", "menu-fit"),
     ]),
     (MenuKind::Mode, &[
-        ("像素", ""),
-        ("矢量", ""),
-        ("绘画", ""),
-        ("排版", ""),
-        ("动画", ""),
+        ("像素", "", "menu-mode-pixel"),
+        ("矢量", "", "menu-mode-vector"),
+        ("绘画", "", "menu-mode-paint"),
+        ("排版", "", "menu-mode-type"),
+        ("动画", "", "menu-mode-animation"),
     ]),
     (MenuKind::Help, &[
-        ("关于 Kaleido", ""),
+        ("关于 Kaleido", "", "menu-about"),
     ]),
 ];
 
@@ -64,7 +65,6 @@ impl MenuBar {
     }
 
     pub(crate) fn toggle_menu(&mut self, kind: MenuKind, cx: &mut Context<Self>) {
-        tracing::info!("MenuBar toggle_menu: {:?}", kind);
         if self.open_menu == Some(kind) {
             self.open_menu = None;
         } else {
@@ -86,11 +86,11 @@ impl Render for MenuBar {
             .text_xs()
             .text_color(cx.theme().foreground)
             .track_focus(&self.focus_handle)
-            .children(MENU_LABELS.iter().enumerate().map(|(ix, (kind, label))| {
+            .children(MENU_LABELS.iter().map(|(kind, label)| {
                 let is_open = open_menu == Some(*kind);
                 let kind = *kind;
 
-                // Menu button with dropdown.
+                // Menu button.
                 let button = div()
                     .px_2()
                     .py_0p5()
@@ -107,39 +107,51 @@ impl Render for MenuBar {
                         cx.dispatch_action(&action);
                     });
 
-                // If this menu is open, show dropdown below.
+                // If this menu is open, show dropdown.
                 if is_open {
                     let items: Vec<_> = MENU_ITEMS
                         .iter()
                         .find(|(k, _)| *k == kind)
                         .map(|(_, items)| {
-                            items.iter().map(|(label, shortcut)| {
+                            items.iter().filter_map(|(label, shortcut, action)| {
                                 if *label == "─" {
                                     // Separator.
-                                    div()
-                                        .w_full()
-                                        .h(px(1.0))
-                                        .bg(cx.theme().border)
-                                        .my_1()
-                                        .into_any_element()
+                                    Some(
+                                        div()
+                                            .w_full()
+                                            .h(px(1.0))
+                                            .bg(cx.theme().border)
+                                            .my_1()
+                                            .into_any_element()
+                                    )
+                                } else if action.is_empty() {
+                                    None
                                 } else {
-                                    div()
-                                        .px_3()
-                                        .py_1()
-                                        .flex()
-                                        .flex_row()
-                                        .justify_between()
-                                        .gap_4()
-                                        .cursor_pointer()
-                                        .hover(|s| s.bg(cx.theme().foreground.opacity(0.1)))
-                                        .child(*label)
-                                        .child(
-                                            div()
-                                                .text_color(cx.theme().foreground.opacity(0.5))
-                                                .text_xs()
-                                                .child(*shortcut),
-                                        )
-                                        .into_any_element()
+                                    let action_name = *action;
+                                    Some(
+                                        div()
+                                            .px_3()
+                                            .py_1()
+                                            .flex()
+                                            .flex_row()
+                                            .justify_between()
+                                            .gap_4()
+                                            .cursor_pointer()
+                                            .hover(|s| s.bg(cx.theme().foreground.opacity(0.1)))
+                                            .child(*label)
+                                            .child(
+                                                div()
+                                                    .text_color(cx.theme().foreground.opacity(0.5))
+                                                    .text_xs()
+                                                    .child(*shortcut),
+                                            )
+                                            .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                                                // Close menu and dispatch action.
+                                                let action = MenuItemAction(action_name.to_string());
+                                                cx.dispatch_action(&action);
+                                            })
+                                            .into_any_element()
+                                    )
                                 }
                             }).collect::<Vec<_>>()
                         })
@@ -174,7 +186,7 @@ impl Render for MenuBar {
     }
 }
 
-// ── Menu Actions ─────────────────────────────────────────────────────────
+// ── Actions ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuToggleAction(pub MenuKind);
@@ -188,5 +200,20 @@ impl gpui::Action for MenuToggleAction {
     }
     fn build(_: serde_json::Value) -> Result<Box<dyn Action>> {
         Ok(Box::new(MenuToggleAction(MenuKind::File)))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuItemAction(pub String);
+
+impl gpui::Action for MenuItemAction {
+    fn name(&self) -> &'static str { "menu-item" }
+    fn name_for_type() -> &'static str { "menu-item" }
+    fn boxed_clone(&self) -> Box<dyn gpui::Action> { Box::new(self.clone()) }
+    fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
+        other.as_any().downcast_ref::<Self>().map_or(false, |a| self == a)
+    }
+    fn build(_: serde_json::Value) -> Result<Box<dyn Action>> {
+        Ok(Box::new(MenuItemAction(String::new())))
     }
 }
