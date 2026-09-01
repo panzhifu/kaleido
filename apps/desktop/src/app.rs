@@ -1,4 +1,4 @@
-//! Main application structure — canvas with side panels.
+//! Main application structure — dock layout with canvas.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -7,6 +7,24 @@ use gpui::*;
 use gpui_component::{ActiveTheme as _, TitleBar, v_flex};
 
 use kaleido_services::app::{AppConfig, KaleidoApp};
+
+/// Wrapper to implement GPUI `Global` for `KaleidoApp`.
+#[derive(Clone, Default)]
+pub(crate) struct GlobalKaleidoApp(pub(crate) KaleidoApp);
+
+impl gpui::Global for GlobalKaleidoApp {}
+
+impl std::ops::Deref for GlobalKaleidoApp {
+    type Target = KaleidoApp;
+    fn deref(&self) -> &KaleidoApp {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for GlobalKaleidoApp {
+    fn deref_mut(&mut self) -> &mut KaleidoApp {
+        &mut self.0
+    }
+}
 
 actions!(
     kaleido_desktop,
@@ -20,19 +38,57 @@ actions!(
 );
 
 use crate::canvas::Canvas;
+use crate::dock::{create_dock_area, save_layout};
 use crate::status_bar::StatusBar;
 
 /// The main Kaleido editor.
 pub struct KaleidoEditor {
     focus_handle: FocusHandle,
+    dock_area: Entity<gpui_component::dock::DockArea>,
     canvas: Entity<Canvas>,
     status_bar: Entity<StatusBar>,
 }
 
 impl KaleidoEditor {
-    pub fn new(_initial_path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(initial_path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
+
         let canvas = cx.new(|cx| Canvas::new(cx));
+
+        // Load initial file if provided via command line.
+        if let Some(path) = initial_path {
+            if let Some(app) = cx.try_global::<GlobalKaleidoApp>() {
+                let data = app.data_service();
+                if let Err(e) = data.open(std::path::Path::new(&path)) {
+                    tracing::error!("failed to open initial file: {e}");
+                } else {
+                    tracing::info!("loaded initial file: {path:?}");
+                }
+            }
+        }
+
+        // Refresh canvas when document changes.
+        cx.subscribe(&canvas, move |_this, _canvas, _ev: &crate::canvas::CanvasEvent, cx| {
+            cx.notify();
+        })
+        .detach();
+
+        let (dock_area, _dock_skin) = create_dock_area(canvas.clone(), window, cx);
+
+        // Persist layout on change.
+        let dock_area_clone = dock_area.clone();
+        cx.subscribe_in(
+            &dock_area,
+            window,
+            move |_this, _dock_area, ev: &gpui_component::dock::DockEvent, _window, cx| {
+                if matches!(ev, gpui_component::dock::DockEvent::LayoutChanged) {
+                    if let Err(err) = save_layout(&dock_area_clone, cx) {
+                        tracing::warn!("failed to save dock layout: {err}");
+                    }
+                }
+            },
+        )
+        .detach();
 
         let status_bar = cx.new(|_cx| {
             StatusBar::new()
@@ -42,12 +98,13 @@ impl KaleidoEditor {
 
         Self {
             focus_handle,
+            dock_area,
             canvas,
             status_bar,
         }
     }
 
-    fn on_undo(&mut self, _: &Undo, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(app) = cx.try_global::<GlobalKaleidoApp>() {
             if app.history_service().can_undo() {
                 if let Err(e) = app.history_service().undo() {
@@ -59,7 +116,7 @@ impl KaleidoEditor {
         }
     }
 
-    fn on_redo(&mut self, _: &Redo, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_redo(&mut self, _: &Redo, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(app) = cx.try_global::<GlobalKaleidoApp>() {
             if app.history_service().can_redo() {
                 if let Err(e) = app.history_service().redo() {
@@ -71,7 +128,7 @@ impl KaleidoEditor {
         }
     }
 
-    fn on_open_file(&mut self, _: &OpenFile, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_open_file(&mut self, _: &OpenFile, window: &mut Window, cx: &mut Context<Self>) {
         let options = PathPromptOptions {
             files: true,
             directories: false,
@@ -112,11 +169,11 @@ impl KaleidoEditor {
         .detach();
     }
 
-    fn on_save(&mut self, _: &Save, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_save(&mut self, _: &Save, window: &mut Window, cx: &mut Context<Self>) {
         cx.notify();
     }
 
-    fn on_save_as(&mut self, _: &SaveAs, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_save_as(&mut self, _: &SaveAs, window: &mut Window, cx: &mut Context<Self>) {
         cx.notify();
     }
 }
@@ -137,27 +194,9 @@ impl Render for KaleidoEditor {
             .child(
                 div()
                     .flex_1()
-                    .min_h(px(0.0))
-                    .child(self.canvas.clone()),
+                    .min_h(px(0.))
+                    .child(self.dock_area.clone()),
             )
             .child(self.status_bar.clone())
-    }
-}
-
-/// Wrapper to implement GPUI `Global` for `KaleidoApp`.
-#[derive(Clone, Default)]
-pub(crate) struct GlobalKaleidoApp(pub(crate) KaleidoApp);
-
-impl gpui::Global for GlobalKaleidoApp {}
-
-impl std::ops::Deref for GlobalKaleidoApp {
-    type Target = KaleidoApp;
-    fn deref(&self) -> &KaleidoApp {
-        &self.0
-    }
-}
-impl std::ops::DerefMut for GlobalKaleidoApp {
-    fn deref_mut(&mut self) -> &mut KaleidoApp {
-        &mut self.0
     }
 }
