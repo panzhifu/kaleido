@@ -67,7 +67,7 @@ impl KaleidoEditor {
 
         let app = cx.global::<GlobalKaleidoApp>().clone();
         let canvas = cx.new(|cx| Canvas::new(app, cx));
-        let menu_bar = cx.new(|cx| MenuBar::new(window, cx));
+        let menu_bar = cx.new(|cx| MenuBar::new(cx));
 
         // Load initial file if provided via command line.
         if let Some(path) = initial_path {

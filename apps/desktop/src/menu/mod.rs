@@ -1,19 +1,12 @@
-//! Menu bar — File, Edit, View, Mode, Help with PopupMenu dropdowns.
+//! Menu bar — File, Edit, View, Mode, Help with dropdown menus.
 
 use gpui::*;
-use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use gpui_component::{h_flex, ActiveTheme as _, StyledExt as _};
 
 /// Menu bar component - renders inside TitleBar.
 pub struct MenuBar {
     focus_handle: FocusHandle,
     open_menu: Option<MenuKind>,
-    /// Pre-built popup menus (created once).
-    file_popup: Option<Entity<PopupMenu>>,
-    edit_popup: Option<Entity<PopupMenu>>,
-    view_popup: Option<Entity<PopupMenu>>,
-    mode_popup: Option<Entity<PopupMenu>>,
-    help_popup: Option<Entity<PopupMenu>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,23 +26,40 @@ const MENU_LABELS: &[(MenuKind, &str)] = &[
     (MenuKind::Help, "帮助"),
 ];
 
-impl MenuBar {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        // Build all popups once at creation time.
-        let file_popup = Self::build_file_popup(window, cx);
-        let edit_popup = Self::build_edit_popup(window, cx);
-        let view_popup = Self::build_view_popup(window, cx);
-        let mode_popup = Self::build_mode_popup(window, cx);
-        let help_popup = Self::build_help_popup(window, cx);
+const MENU_ITEMS: &[(MenuKind, &[(&str, &str)])] = &[
+    (MenuKind::File, &[
+        ("打开", "ctrl-o"),
+        ("保存", "ctrl-s"),
+        ("另存为", "ctrl-shift-s"),
+        ("─", ""),
+        ("退出", ""),
+    ]),
+    (MenuKind::Edit, &[
+        ("撤销", "ctrl-z"),
+        ("重做", "ctrl-shift-z"),
+    ]),
+    (MenuKind::View, &[
+        ("放大", "ctrl-="),
+        ("缩小", "ctrl--"),
+        ("适应窗口", ""),
+    ]),
+    (MenuKind::Mode, &[
+        ("像素", ""),
+        ("矢量", ""),
+        ("绘画", ""),
+        ("排版", ""),
+        ("动画", ""),
+    ]),
+    (MenuKind::Help, &[
+        ("关于 Kaleido", ""),
+    ]),
+];
 
+impl MenuBar {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
             open_menu: None,
-            file_popup: Some(file_popup),
-            edit_popup: Some(edit_popup),
-            view_popup: Some(view_popup),
-            mode_popup: Some(mode_popup),
-            help_popup: Some(help_popup),
         }
     }
 
@@ -61,76 +71,26 @@ impl MenuBar {
         }
         cx.notify();
     }
-
-    fn build_file_popup(window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
-        PopupMenu::build(window, cx, |menu, _window, _cx| {
-            menu.item(PopupMenuItem::new("打开").action(Box::new(OpenFileAction)))
-                .item(PopupMenuItem::new("保存").action(Box::new(SaveAction)))
-                .item(PopupMenuItem::new("另存为").action(Box::new(SaveAsAction)))
-                .item(PopupMenuItem::separator())
-                .item(PopupMenuItem::new("退出").action(Box::new(ExitAction)))
-        })
-    }
-
-    fn build_edit_popup(window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
-        PopupMenu::build(window, cx, |menu, _window, _cx| {
-            menu.item(PopupMenuItem::new("撤销 (Ctrl+Z)").action(Box::new(UndoAction)))
-                .item(PopupMenuItem::new("重做 (Ctrl+Shift+Z)").action(Box::new(RedoAction)))
-        })
-    }
-
-    fn build_view_popup(window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
-        PopupMenu::build(window, cx, |menu, _window, _cx| {
-            menu.item(PopupMenuItem::new("放大").action(Box::new(ZoomInAction)))
-                .item(PopupMenuItem::new("缩小").action(Box::new(ZoomOutAction)))
-                .item(PopupMenuItem::new("适应窗口").action(Box::new(FitToWindowAction)))
-        })
-    }
-
-    fn build_mode_popup(window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
-        PopupMenu::build(window, cx, |menu, _window, _cx| {
-            menu.item(PopupMenuItem::new("像素").action(Box::new(ModePixelAction)))
-                .item(PopupMenuItem::new("矢量").action(Box::new(ModeVectorAction)))
-                .item(PopupMenuItem::new("绘画").action(Box::new(ModePaintAction)))
-                .item(PopupMenuItem::new("排版").action(Box::new(ModeTypeAction)))
-                .item(PopupMenuItem::new("动画").action(Box::new(ModeAnimationAction)))
-        })
-    }
-
-    fn build_help_popup(window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
-        PopupMenu::build(window, cx, |menu, _window, _cx| {
-            menu.item(PopupMenuItem::new("关于 Kaleido").action(Box::new(AboutAction)))
-        })
-    }
-
-    fn get_popup(&self, kind: MenuKind) -> Option<Entity<PopupMenu>> {
-        match kind {
-            MenuKind::File => self.file_popup.clone(),
-            MenuKind::Edit => self.edit_popup.clone(),
-            MenuKind::View => self.view_popup.clone(),
-            MenuKind::Mode => self.mode_popup.clone(),
-            MenuKind::Help => self.help_popup.clone(),
-        }
-    }
 }
 
 impl Render for MenuBar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let open_menu = self.open_menu;
+
         h_flex()
             .id("menu-bar")
             .items_center()
             .h_full()
             .flex_1()
             .text_xs()
-            .gap_0()
             .text_color(cx.theme().foreground)
-            .children(MENU_LABELS.iter().map(|(kind, label)| {
-                let is_open = self.open_menu == Some(*kind);
+            .track_focus(&self.focus_handle)
+            .children(MENU_LABELS.iter().enumerate().map(|(ix, (kind, label))| {
+                let is_open = open_menu == Some(*kind);
                 let kind = *kind;
 
-                // Menu button.
+                // Menu button with dropdown.
                 let button = div()
-                    .relative()
                     .px_2()
                     .py_0p5()
                     .rounded(px(4.0))
@@ -146,29 +106,69 @@ impl Render for MenuBar {
                         cx.dispatch_action(&action);
                     });
 
-                // If this menu is open, show the popup below the button.
+                // If this menu is open, show dropdown below.
                 if is_open {
-                    if let Some(popup) = self.get_popup(kind) {
-                        div()
-                            .relative()
-                            .child(button)
-                            .child(
-                                div()
-                                    .absolute()
-                                    .top(px(20.0))
-                                    .left(px(0.0))
-                                    .min_w(px(150.0))
-                                    .child(popup),
-                            )
-                            .into_any_element()
-                    } else {
-                        button.into_any_element()
-                    }
+                    let items: Vec<_> = MENU_ITEMS
+                        .iter()
+                        .find(|(k, _)| *k == kind)
+                        .map(|(_, items)| {
+                            items.iter().map(|(label, shortcut)| {
+                                if *label == "─" {
+                                    // Separator.
+                                    div()
+                                        .w_full()
+                                        .h(px(1.0))
+                                        .bg(cx.theme().border)
+                                        .my_1()
+                                        .into_any_element()
+                                } else {
+                                    div()
+                                        .px_3()
+                                        .py_1()
+                                        .flex()
+                                        .flex_row()
+                                        .justify_between()
+                                        .gap_4()
+                                        .cursor_pointer()
+                                        .hover(|s| s.bg(cx.theme().foreground.opacity(0.1)))
+                                        .child(*label)
+                                        .child(
+                                            div()
+                                                .text_color(cx.theme().foreground.opacity(0.5))
+                                                .text_xs()
+                                                .child(*shortcut),
+                                        )
+                                        .into_any_element()
+                                }
+                            }).collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+
+                    div()
+                        .relative()
+                        .child(button)
+                        .child(
+                            div()
+                                .absolute()
+                                .top(px(22.0))
+                                .left(px(0.0))
+                                .min_w(px(160.0))
+                                .bg(cx.theme().background)
+                                .border_1()
+                                .border_color(cx.theme().border)
+                                .rounded(px(4.0))
+                                .shadow_lg()
+                                .flex()
+                                .flex_col()
+                                .py_1()
+                                .children(items),
+                        )
+                        .into_any_element()
                 } else {
                     button.into_any_element()
                 }
             }))
-            // Spacer to push window controls to the right.
+            // Spacer.
             .child(div().flex_1())
     }
 }
@@ -189,37 +189,3 @@ impl gpui::Action for MenuToggleAction {
         Ok(Box::new(MenuToggleAction(MenuKind::File)))
     }
 }
-
-macro_rules! define_action {
-    ($name:ident, $action:expr) => {
-        #[derive(Debug, Clone, PartialEq, Eq)]
-        pub struct $name;
-        impl gpui::Action for $name {
-            fn name(&self) -> &'static str { $action }
-            fn name_for_type() -> &'static str { $action }
-            fn boxed_clone(&self) -> Box<dyn gpui::Action> { Box::new(self.clone()) }
-            fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
-                other.as_any().downcast_ref::<Self>().map_or(false, |a| self == a)
-            }
-            fn build(_: serde_json::Value) -> Result<Box<dyn Action>> {
-                Ok(Box::new($name))
-            }
-        }
-    };
-}
-
-define_action!(OpenFileAction, "menu-open-file");
-define_action!(SaveAction, "menu-save");
-define_action!(SaveAsAction, "menu-save-as");
-define_action!(ExitAction, "menu-exit");
-define_action!(UndoAction, "menu-undo");
-define_action!(RedoAction, "menu-redo");
-define_action!(ZoomInAction, "menu-zoom-in");
-define_action!(ZoomOutAction, "menu-zoom-out");
-define_action!(FitToWindowAction, "menu-fit-to-window");
-define_action!(ModePixelAction, "menu-mode-pixel");
-define_action!(ModeVectorAction, "menu-mode-vector");
-define_action!(ModePaintAction, "menu-mode-paint");
-define_action!(ModeTypeAction, "menu-mode-type");
-define_action!(ModeAnimationAction, "menu-mode-animation");
-define_action!(AboutAction, "menu-about");
