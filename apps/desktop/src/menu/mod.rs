@@ -65,11 +65,13 @@ impl MenuBar {
     }
 
     pub(crate) fn toggle_menu(&mut self, kind: MenuKind, cx: &mut Context<Self>) {
+        tracing::info!("toggle_menu: {:?}, current={:?}", kind, self.open_menu);
         if self.open_menu == Some(kind) {
             self.open_menu = None;
         } else {
             self.open_menu = Some(kind);
         }
+        tracing::info!("new state: {:?}", self.open_menu);
         cx.notify();
     }
 }
@@ -102,7 +104,7 @@ impl Render for MenuBar {
                     })
                     .cursor_pointer()
                     .child(*label)
-                    .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                    .on_mouse_down(gpui::MouseButton::Left, move |_, _window, cx| {
                         let action = MenuToggleAction(kind);
                         cx.dispatch_action(&action);
                     });
@@ -145,7 +147,7 @@ impl Render for MenuBar {
                                                     .text_xs()
                                                     .child(*shortcut),
                                             )
-                                            .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                                            .on_mouse_down(gpui::MouseButton::Left, move |_, _window, cx| {
                                                 // Close menu and dispatch action.
                                                 let action = MenuItemAction(action_name.to_string());
                                                 cx.dispatch_action(&action);

@@ -184,6 +184,7 @@ impl KaleidoEditor {
     }
 
     fn on_menu_toggle(&mut self, action: &MenuToggleAction, _window: &mut Window, cx: &mut Context<Self>) {
+        tracing::info!("on_menu_toggle received: {:?}", action.0);
         self.menu_bar.update(cx, |menu_bar, cx| {
             menu_bar.toggle_menu(action.0, cx);
         });
