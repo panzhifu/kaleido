@@ -63,6 +63,6 @@ pub use plugins::events::{
 };
 pub use plugins::panel::{Panel, PanelButton, PanelContext, PanelElement, PanelRegistry, PanelSection};
 pub use plugins::tool::{
-    NumericConstraints, ParamSchema, ParamType, Tool, ToolParams, ToolRegistry, ToolSchema,
-    resolve_tool_registry,
+    InteractiveTool, NumericConstraints, ParamSchema, ParamType, PointerEvent, Tool, ToolContext,
+    ToolParams, ToolRegistry, ToolSchema, resolve_tool_registry,
 };

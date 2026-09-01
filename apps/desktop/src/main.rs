@@ -13,6 +13,7 @@ use kaleido_services::app::{AppConfig, KaleidoApp};
 mod app;
 mod canvas;
 mod dock;
+mod menu;
 mod status_bar;
 mod toolbar;
 

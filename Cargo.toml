@@ -8,6 +8,8 @@ members = [
     "apps/cli",
     "apps/desktop",
     "plugins/examples/tga",
+    "plugins/examples/move-tool",
+    "plugins/examples/color-panel",
     "plugins/wasm/simple_format",
 ]
 

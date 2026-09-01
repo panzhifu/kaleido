@@ -18,6 +18,7 @@ use std::sync::{Arc, Weak};
 use kaleido_core::{ImageError, ImageResult, TiledImage};
 use serde_json::Value;
 
+use crate::keyboard::{KeyEvent, KeyCode};
 use crate::plugins::category::ToolCategory;
 use crate::plugins::cursor::CursorType;
 
@@ -499,6 +500,108 @@ pub trait Tool: Send + Sync + 'static {
     /// [`CursorType::Default`].
     fn cursor(&self) -> CursorType {
         CursorType::Default
+    }
+}
+
+// ── PointerEvent ──────────────────────────────────────────────────────────
+
+/// Pointer event data delivered to interactive tools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PointerEvent {
+    /// Image-space X coordinate (pixels).
+    pub x: u32,
+    /// Image-space Y coordinate (pixels).
+    pub y: u32,
+    /// Primary button (left click / pen tip).
+    pub primary_button: bool,
+    /// Secondary button (right click).
+    pub secondary_button: bool,
+    /// Modifier keys held.
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+}
+
+/// Interactive tool context — provides access to services during interaction.
+///
+/// History is recorded by the host (desktop) before passing pointer events
+/// to the plugin, so plugins don't need direct access to HistoryService.
+pub trait ToolContext {
+    /// Returns the layer service for node manipulation.
+    fn layer_service(&self) -> Option<std::sync::Arc<dyn crate::layer::LayerService>>;
+
+    /// Returns the active layer id, if any.
+    fn active_layer(&self) -> Option<kaleido_core::NodeId>;
+}
+
+// ---------------------------------------------------------------------------
+// InteractiveTool
+// ---------------------------------------------------------------------------
+
+/// An interactive tool — extends [`Tool`] with pointer-event handling.
+///
+/// Interactive tools receive pointer events when the user interacts with
+/// the canvas (click, drag, release). The host (desktop) owns screen→image
+/// coordinate conversion and undo snapshots — plugins only paint into
+/// their [`ToolContext`] and call layer/history services.
+pub trait InteractiveTool: Tool {
+    /// Called when the user presses a pointer button.
+    ///
+    /// The host has already captured a history snapshot before calling
+    /// this method, so the tool only needs to apply its transformation.
+    fn on_mouse_down(&mut self, event: &PointerEvent, _ctx: &dyn ToolContext) {}
+
+    /// Called when the user drags the pointer.
+    ///
+    /// Called repeatedly between [`Self::on_mouse_down`] and
+    /// [`Self::on_mouse_up`]. Use this for live preview.
+    fn on_mouse_drag(&mut self, event: &PointerEvent, _ctx: &dyn ToolContext) {}
+
+    /// Called when the user releases the pointer button.
+    ///
+    /// Commit the final transformation here.
+    fn on_mouse_up(&mut self, event: &PointerEvent, _ctx: &dyn ToolContext) {}
+
+    /// Called when a key is pressed while this tool is active.
+    fn on_key_down(&mut self, _key: KeyCode, _ctx: &dyn ToolContext) {}
+
+    /// Whether this tool is currently in an active stroke.
+    ///
+    /// Returns `true` between [`Self::on_mouse_down`] and
+    /// [`Self::on_mouse_up`]. The host uses this to suppress other
+    /// interactions during a stroke.
+    fn is_stroke_active(&self) -> bool {
+        false
+    }
+
+    /// Returns the cursor this interactive tool wants displayed.
+    ///
+    /// Overrides [`Tool::cursor`] with a `Move` cursor by default.
+    fn cursor(&self) -> CursorType {
+        CursorType::Move
+    }
+
+    /// Whether this tool supports keyboard shortcuts.
+    ///
+    /// Override to return `true` and implement [`Self::shortcut_keys()`]
+    /// to enable keyboard activation.
+    fn supports_shortcuts(&self) -> bool {
+        false
+    }
+
+    /// Returns the shortcut key for this tool (e.g. `"M"` for Move).
+    ///
+    /// Only called when [`Self::supports_shortcuts`] returns `true`.
+    fn shortcut_key(&self) -> Option<&str> {
+        None
+    }
+
+    /// Returns the toolbar icon for this tool.
+    ///
+    /// Overrides [`Tool::icon`] for interactive tools that appear in
+    /// the toolbar.
+    fn toolbar_icon(&self) -> Option<&str> {
+        None
     }
 }
 

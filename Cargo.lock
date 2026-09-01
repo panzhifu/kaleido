@@ -3907,6 +3907,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kaleido-panel-color"
+version = "0.1.0"
+dependencies = [
+ "cordis-rs",
+ "kaleido-core",
+ "kaleido-services",
+ "kaleido-traits",
+ "serde_json",
+]
+
+[[package]]
 name = "kaleido-sdk"
 version = "0.1.0"
 dependencies = [
@@ -3938,6 +3949,16 @@ dependencies = [
  "tracing",
  "wasmtime",
  "wide",
+]
+
+[[package]]
+name = "kaleido-tool-move"
+version = "0.1.0"
+dependencies = [
+ "cordis-rs",
+ "kaleido-core",
+ "kaleido-traits",
+ "serde_json",
 ]
 
 [[package]]

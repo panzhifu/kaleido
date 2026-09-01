@@ -36,13 +36,17 @@ actions!(
     ]
 );
 
+use crate::menu::MenuToggleAction;
+
 use crate::canvas::Canvas;
 use crate::dock::{create_dock_area, save_layout};
+use crate::menu::MenuBar;
 use crate::status_bar::StatusBar;
 
 /// The main Kaleido editor.
 pub struct KaleidoEditor {
     focus_handle: FocusHandle,
+    menu_bar: Entity<MenuBar>,
     dock_area: Entity<gpui_component::dock::DockArea>,
     canvas: Entity<Canvas>,
     status_bar: Entity<StatusBar>,
@@ -65,7 +69,7 @@ impl KaleidoEditor {
 
         let app = cx.global::<GlobalKaleidoApp>().clone();
         let canvas = cx.new(|cx| Canvas::new(app, cx));
-
+        let menu_bar = cx.new(|cx| MenuBar::new(cx));
 
         // Load initial file if provided via command line.
         if let Some(path) = initial_path {
@@ -113,6 +117,7 @@ impl KaleidoEditor {
 
         Self {
             focus_handle,
+            menu_bar,
             dock_area,
             canvas,
             status_bar,
@@ -191,6 +196,12 @@ impl KaleidoEditor {
     fn on_save_as(&mut self, _: &SaveAs, window: &mut Window, cx: &mut Context<Self>) {
         cx.notify();
     }
+
+    fn on_menu_toggle(&mut self, action: &MenuToggleAction, _window: &mut Window, cx: &mut Context<Self>) {
+        self.menu_bar.update(cx, |menu_bar, cx| {
+            menu_bar.toggle_menu(action.0, cx);
+        });
+    }
 }
 
 impl Render for KaleidoEditor {
@@ -205,7 +216,9 @@ impl Render for KaleidoEditor {
             .on_action(cx.listener(Self::on_open_file))
             .on_action(cx.listener(Self::on_save))
             .on_action(cx.listener(Self::on_save_as))
+            .on_action(cx.listener(Self::on_menu_toggle))
             .child(TitleBar::new())
+            .child(self.menu_bar.clone())
             .child(
                 div()
                     .flex_1()

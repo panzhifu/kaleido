@@ -1,0 +1,13 @@
+[package]
+name = "kaleido-tool-move"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+kaleido-core = { path = "../../../crates/kaleido-core" }
+kaleido-traits = { path = "../../../crates/kaleido-traits" }
+cordis-rs = { workspace = true }
+serde_json = { workspace = true }

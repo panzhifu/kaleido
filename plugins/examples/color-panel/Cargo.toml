@@ -1,0 +1,14 @@
+[package]
+name = "kaleido-panel-color"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+kaleido-core = { path = "../../../crates/kaleido-core" }
+kaleido-traits = { path = "../../../crates/kaleido-traits" }
+kaleido-services = { path = "../../../crates/kaleido-services" }
+cordis-rs = { workspace = true }
+serde_json = { workspace = true }
