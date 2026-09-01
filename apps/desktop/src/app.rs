@@ -1,9 +1,30 @@
-//! Main application structure — dock layout only, no panels yet.
+//! Main application structure — dock layout with canvas.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use gpui::*;
 use gpui_component::{ActiveTheme as _, TitleBar, v_flex};
+
+use kaleido_services::app::{AppConfig, KaleidoApp};
+
+/// Wrapper to implement GPUI `Global` for `KaleidoApp`.
+#[derive(Clone, Default)]
+pub(crate) struct GlobalKaleidoApp(pub(crate) KaleidoApp);
+
+impl gpui::Global for GlobalKaleidoApp {}
+
+impl std::ops::Deref for GlobalKaleidoApp {
+    type Target = KaleidoApp;
+    fn deref(&self) -> &KaleidoApp {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for GlobalKaleidoApp {
+    fn deref_mut(&mut self) -> &mut KaleidoApp {
+        &mut self.0
+    }
+}
 
 actions!(
     kaleido_desktop,
@@ -16,6 +37,7 @@ actions!(
     ]
 );
 
+use crate::canvas::Canvas;
 use crate::dock::{create_dock_area, save_layout};
 use crate::status_bar::StatusBar;
 
@@ -23,13 +45,16 @@ use crate::status_bar::StatusBar;
 pub struct KaleidoEditor {
     focus_handle: FocusHandle,
     dock_area: Entity<gpui_component::dock::DockArea>,
+    canvas: Entity<Canvas>,
     status_bar: Entity<StatusBar>,
 }
 
 impl KaleidoEditor {
     pub fn new(_initial_path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
-        let (dock_area, _dock_skin) = create_dock_area(window, cx);
+
+        let canvas = cx.new(|cx| Canvas::new(cx));
+        let (dock_area, _dock_skin) = create_dock_area(canvas.clone(), window, cx);
 
         // Persist layout on change.
         let dock_area_clone = dock_area.clone();
@@ -55,16 +80,33 @@ impl KaleidoEditor {
         Self {
             focus_handle,
             dock_area,
+            canvas,
             status_bar,
         }
     }
 
     fn on_undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
-        cx.notify();
+        if let Some(app) = cx.try_global::<GlobalKaleidoApp>() {
+            if app.history_service().can_undo() {
+                if let Err(e) = app.history_service().undo() {
+                    tracing::warn!("undo failed: {e}");
+                } else {
+                    cx.notify();
+                }
+            }
+        }
     }
 
     fn on_redo(&mut self, _: &Redo, window: &mut Window, cx: &mut Context<Self>) {
-        cx.notify();
+        if let Some(app) = cx.try_global::<GlobalKaleidoApp>() {
+            if app.history_service().can_redo() {
+                if let Err(e) = app.history_service().redo() {
+                    tracing::warn!("redo failed: {e}");
+                } else {
+                    cx.notify();
+                }
+            }
+        }
     }
 
     fn on_open_file(&mut self, _: &OpenFile, window: &mut Window, cx: &mut Context<Self>) {
@@ -80,7 +122,7 @@ impl KaleidoEditor {
                 Ok(Ok(Some(paths))) => paths,
                 _ => return,
             };
-            let Some(path) = paths.into_iter().next() else { return; };
+            let Some(path) = paths.into_iter().next() else { return };
             tracing::info!("open: {path:?}");
         })
         .detach();

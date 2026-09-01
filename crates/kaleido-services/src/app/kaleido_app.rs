@@ -90,6 +90,12 @@ pub struct KaleidoApp {
     task_service: Arc<dyn TaskService>,
 }
 
+impl Default for KaleidoApp {
+    fn default() -> Self {
+        Self::boot_default().expect("failed to boot default KaleidoApp")
+    }
+}
+
 impl KaleidoApp {
     /// Boots the application: creates the root context and installs all
     /// service plugins with the given configuration.

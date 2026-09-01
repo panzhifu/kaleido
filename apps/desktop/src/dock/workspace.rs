@@ -21,6 +21,7 @@ const STATE_FILE: &str = "dock-layout.json";
 
 /// Creates the dock area with default layout.
 pub fn create_dock_area(
+    canvas: Entity<crate::canvas::Canvas>,
     window: &mut Window,
     cx: &mut App,
 ) -> (Entity<DockArea>, Rc<DockSkin>) {
@@ -31,7 +32,7 @@ pub fn create_dock_area(
         Ok(_) => tracing::info!("dock layout loaded"),
         Err(_) => {
             tracing::info!("using default dock layout");
-            set_default_layout(dock_area.clone(), window, cx);
+            set_default_layout(canvas, dock_area.clone(), window, cx);
         }
     }
 
@@ -39,7 +40,12 @@ pub fn create_dock_area(
 }
 
 /// Sets the default dock layout.
-fn set_default_layout(dock_area: Entity<DockArea>, window: &mut Window, cx: &mut App) {
+fn set_default_layout(
+    canvas: Entity<crate::canvas::Canvas>,
+    dock_area: Entity<DockArea>,
+    window: &mut Window,
+    cx: &mut App,
+) {
     // Left panel placeholder
     let left = DockLayout::tabs().panel_view(
         panel_handle(cx.new(|cx| PlaceholderPanel::new("Tools", "左侧工具面板", cx))),
@@ -58,11 +64,9 @@ fn set_default_layout(dock_area: Entity<DockArea>, window: &mut Window, cx: &mut
         cx,
     );
 
-    // Center panel (main canvas area)
-    let center = DockLayout::tabs().panel_view(
-        panel_handle(cx.new(|cx| PlaceholderPanel::new("Canvas", "主画布区域", cx))),
-        cx,
-    );
+    // Center panel — the canvas (wrapped in a dock-compatible panel)
+    let canvas_panel = cx.new(|cx| CanvasPanel::new(canvas, cx));
+    let center = DockLayout::tabs().panel_view(panel_handle(canvas_panel), cx);
 
     // Build layout: left | center | right
     let main_split = DockLayout::h_split()
@@ -78,6 +82,39 @@ fn set_default_layout(dock_area: Entity<DockArea>, window: &mut Window, cx: &mut
     dock_area.update(cx, |area, cx| {
         area.set_center(full_layout, window, cx);
     });
+}
+
+/// A dock-compatible panel that wraps the Canvas.
+pub struct CanvasPanel {
+    canvas: Entity<crate::canvas::Canvas>,
+}
+
+impl CanvasPanel {
+    pub fn new(canvas: Entity<crate::canvas::Canvas>, cx: &mut Context<Self>) -> Self {
+        Self { canvas }
+    }
+}
+
+impl BasePanel for CanvasPanel {
+    fn panel_name(&self) -> &'static str {
+        "Canvas"
+    }
+}
+
+impl Panel for CanvasPanel {}
+
+impl EventEmitter<PanelEvent> for CanvasPanel {}
+
+impl Focusable for CanvasPanel {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.canvas.focus_handle(cx)
+    }
+}
+
+impl Render for CanvasPanel {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.canvas.clone().into_any_element()
+    }
 }
 
 /// A simple placeholder panel for dock layout testing.

@@ -5,14 +5,18 @@ use gpui::{App, AppContext, Bounds, KeyBinding, WindowBounds, WindowDecorations,
 use gpui_component::{Root, TitleBar};
 use gpui_component_assets::Assets;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::info;
 
+use kaleido_services::app::{AppConfig, KaleidoApp};
+
 mod app;
+mod canvas;
 mod dock;
 mod status_bar;
 mod toolbar;
 
-use app::{KaleidoEditor, OpenFile, Redo, Save, SaveAs, Undo};
+use app::{GlobalKaleidoApp, KaleidoEditor, OpenFile, Redo, Save, SaveAs, Undo};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -52,6 +56,11 @@ fn main() -> Result<()> {
     app.run(move |cx: &mut App| {
         gpui_component::init(cx);
         bind_keyboard_shortcuts(cx);
+
+        // Boot the service layer and register as a global.
+        let kaleido_app =
+            KaleidoApp::boot(AppConfig::default()).expect("failed to boot KaleidoApp");
+        cx.set_global(GlobalKaleidoApp(kaleido_app));
 
         let bounds = Bounds::centered(
             None,
