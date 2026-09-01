@@ -54,6 +54,13 @@ impl KaleidoEditor {
         let focus_handle = cx.focus_handle();
 
         let canvas = cx.new(|cx| Canvas::new(cx));
+
+        // Refresh canvas when document changes.
+        cx.subscribe(&canvas, move |_this, _canvas, _ev: &crate::canvas::CanvasEvent, cx| {
+            cx.notify();
+        })
+        .detach();
+
         let (dock_area, _dock_skin) = create_dock_area(canvas.clone(), window, cx);
 
         // Persist layout on change.
@@ -117,13 +124,35 @@ impl KaleidoEditor {
             prompt: Some("打开图片".into()),
         };
         let receiver = cx.prompt_for_paths(options);
-        cx.spawn(async move |_, cx| {
+        let this = cx.weak_entity();
+        // Capture the global app reference before entering async context.
+        let app = cx.try_global::<GlobalKaleidoApp>().cloned();
+        cx.spawn(async move |this, cx| {
             let paths = match receiver.await {
                 Ok(Ok(Some(paths))) => paths,
                 _ => return,
             };
             let Some(path) = paths.into_iter().next() else { return };
             tracing::info!("open: {path:?}");
+
+            let Some(app) = app else {
+                tracing::warn!("KaleidoApp global not available");
+                return;
+            };
+
+            // Load the file into the document service.
+            match app.data_service().open(std::path::Path::new(&path)) {
+                Ok(()) => {
+                    tracing::info!("document loaded: {path:?}");
+                    // Notify the UI to refresh.
+                    let _ = this.update(cx, |_, cx| {
+                        cx.notify();
+                    });
+                }
+                Err(e) => {
+                    tracing::error!("failed to open file: {e}");
+                }
+            }
         })
         .detach();
     }
