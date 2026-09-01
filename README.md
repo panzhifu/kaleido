@@ -31,54 +31,42 @@ This crate contains **only data structures** — no service logic, no plugin fra
 
 | # | Manager | Service ID | Responsibility |
 |---|---------|-----------|----------------|
-| 1 | **Data** | `data_service` | Document lifecycle, single write path (`apply_mutation`), undo snapshot restore, export |
+| 1 | **Data** | `data_service` | Document lifecycle, file I/O, undo snapshot restore |
 | 2 | **History** | `history_service` | Undo/redo with COW snapshot restoration |
 | 3 | **Layer** | `layer_service` | Add/remove/reorder/rename/opacity/blend on scene nodes |
 | 4 | **Selection** | `selection_service` | Selection mask: set/clear/invert/union/intersect/subtract |
 | 5 | **Color** | `color_service` | Color profile, swatch management |
 | 6 | **Render** | `render_service` | Scene compositing (bottom-up, blend+opacity), export flattened |
 | 7 | **Plugin** | `plugin_service` | Plugin manifest/loading/lifecycle, WASM runtime (wasmtime), tool registry |
-| 8 | **App** | `app_service` | App name/version, editing mode, notifications |
+| 8 | **App** | `app_service` | App name/version, editing mode, notifications, **software configuration** |
 | 9 | **Resource** | `resource_service` | Font/swatch/brush resource management |
 | 10 | **Shortcut** | `shortcut_service` | Global/mode/plugin keyboard shortcut registration & resolution |
 | 11 | **UI** | `ui_service` | Status bar, notifications, panel registration |
 | 12 | **Task** | `task_service` | Background task spawn/progress/cancel/join |
 
-**Core design — single write path**: All document mutations go through `DataService::apply_mutation(label, f)`:
+**Core design — single write path**: All document mutations go through `DataService`:
 1. COW-clone current Document as "before" snapshot (Arc-shared tiles, zero-cost)
-2. Execute `f(&mut Document)` (if it fails: no change, no record)
+2. Execute mutation (if it fails: no change, no record)
 3. Push "before" snapshot to undo stack; clear redo stack
-4. Emit `document_changed`
 
-**Legacy services** (based on the old `TiledImage` model) are preserved for backward compatibility: `ImageStore`, `HistoryKeeper`, `LayerStore`, `FileCodecRegistry`, `ToolRegistry`, `PanelRegistry`, `AIAgent`, `InteractiveToolRunner`, `OpGraph`, `BlendMode SIMD`, `AsyncImageLoader`, `BackgroundSaver`. These will be removed once the desktop host migrates to the new model.
+### Plugin contracts (`kaleido-traits/plugins/`)
 
-### Plugin contracts
-- `Tool` trait with **parameter schemas** (`ParamType` / `ParamSchema` / `ToolSchema`): auto-generated UI forms, validation and default values
-- **`Tool` metadata** — `icon()` for toolbar display, `category()` for functional grouping (11 categories: Selection/Transform/Painting/ColorAdjustment/Retouch/Fill/Vector/Text/Analysis/Navigation/Other), `is_enabled()` for contextual availability, `cursor()` for cursor appearance (18 cursor types)
-- **`InteractiveTool` trait** — extends `Tool` with a pointer-event stream (`on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`); delivers pre-converted image-space coordinates, pressure, button and modifier state via `PointerEvent`; plugins paint into `ToolContext` and record dirty tiles, while the host owns undo and repaint
-- **`InteractiveTool` keyboard** — `on_key_down()` / `on_key_up()` with `KeyEvent` / `KeyCode` / `KeyModifiers`; `on_escape()` for stroke cancellation; `is_stroke_active()` for stroke state queries
-- **`InteractiveTool` lifecycle** — `on_activate()` / `on_deactivate()` for state setup/cleanup when switching tools
-- **`SelectionTool` trait** — produces a `Selection` (pixel mask) rather than modifying pixels; `on_begin()` / `on_update()` / `on_end()` with `SelectionMode` (Replace/Add/Subtract/Intersect)
-- **`Panel` trait** — plugins render custom UI in the host's side panel via 12 element types (Label/Heading/NumberInput/Checkbox/Dropdown/ColorPicker/ButtonRow/Canvas/Progress/Section); `on_change()` / `on_button()` for interactivity
-- **`AnalysisTool` trait** — read-only tools that inspect pixels (histogram, colour picker, measurement); `analyze()` returns JSON result
-- **`SelectionState`** — shared selection state with `contains()`, `bounds()`, `invert()`; flat `Vec<bool>` mask for O(1) pixel testing
-- **`Selection-constrained rendering`** — `apply_to_selection()` processes only tiles intersecting the selection (6100 tiles → 16 tiles for a 500×500 selection in 10000×10000 image)
-- **WIT interface** (`wit/kaleido.wit`) — WASM boundary: `tool`, `plugin-lifecycle`, `host-functions` interfaces + `world kaleido-plugin`
-- **WASM runtime** — compiled `.wasm` plugins are loaded and executed via **wasmtime**: `WasmPluginManager` scans plugin directories, instantiates modules (C ABI: `plugin_init` / `tool_apply` / …), and registers every tool into the registry. Host functions (`host_log`, `host_emit_event`) are linked in
-- **WASM selection optimization** — when a selection is set, only the selection bounding box region is exchanged with WASM (not the full image), reducing data transfer by 99%+ for localized operations
+- `Tool` trait with **parameter schemas** (`ParamType` / `ParamSchema` / `ToolSchema`)
+- **`Tool` metadata** — `icon()`, `category()` (11 categories), `is_enabled()`, `cursor()` (18 cursor types)
+- **`InteractiveTool` trait** — pointer-event stream (`on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`)
+- **`SelectionTool` trait** — produces `Selection` pixel mask
+- **`Panel` trait** — plugins render custom UI in side panels
+- **`AnalysisTool` trait** — read-only tools (histogram, color picker, measurement)
+- **WIT interface** (`wit/kaleido.wit`) — WASM boundary for sandboxed plugins
 - **Plugin SDK** (`kaleido-sdk`) — `ToolPlugin<T>` builder + `define_tool!` macro
-- **AI tool generation** — `KaleidoApp::create_ai_tool(description, apply_fn)` registers a tool from a JSON description and emits `tool_upgraded`
 
 ### Applications
-- **`kaleido-cli`** — image info / convert / list-formats / brightness / invert / resize / grayscale, plus plugin commands: `list-tools`, `tool-schema`, `run` (custom params), `create-tool` (AI-generated tools)
-- **`kaleido-desktop`** — GPUI host with a canvas rendering directly from the `ImageStore`, a **toolbar generated dynamically from the plugin registry**, an active `InteractiveTool` receiving pointer events, full **keyboard shortcuts** (Ctrl+Z undo, Ctrl+Shift+Z redo, Ctrl+O open, Ctrl+S save, Ctrl+Shift+S save as), a **menu bar** (File / Edit / View / Mode / Help), a **status bar** showing undo/redo step counts and file operation feedback, and a **dock system** (replacing the old fixed panel layout) for flexible panel arrangement
+- **`kaleido-cli`** — demonstrates the 12-manager architecture with `status` and `demo` commands
+- **`kaleido-desktop`** — GPUI host with canvas rendering, dock system, keyboard shortcuts, file open/save, undo/redo
 
 ### Plugin system
-- `Tool` contract (`kaleido-traits`) — plugins implement `name` / `menu_path` / `description` / `apply`
-- `InteractiveTool` contract — pointer-driven tools implement `on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`
-- Cordis service plugins with dependency injection (`Inject`) and fiber-managed lifetimes
-- Example plugins: [`plugins/examples/tga`](plugins/examples/tga) (TGA format codec plugin), [`plugins/wasm/simple_format`](plugins/wasm/simple_format) (WASM plugin example)
-- Installing / uninstalling a plugin adds / removes commands dynamically — no host changes
+- Example plugins: [`plugins/examples/tga`](plugins/examples/tga) (TGA format codec), [`plugins/wasm/simple_format`](plugins/wasm/simple_format) (WASM plugin)
+- Installing / uninstalling a plugin adds / removes commands dynamically
 
 ## Architecture
 
@@ -86,17 +74,11 @@ This crate contains **only data structures** — no service logic, no plugin fra
 ┌──────────────────────────────────────────────────────────────────┐
 │                        Host (CLI / GPUI desktop)                 │
 │                                                                  │
-│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────────┐ │
-│  │ AI Agent    │  │ Canvas       │  │ Tool Registry           │ │
-│  │ Service     │  │ Service      │  │ (Cordis service)        │ │
-│  │ (template)  │  │ (viewport)   │  │ ← WASM / native / AI    │ │
-│  └──────┬──────┘  └──────┬───────┘  └─────────────────────────┘ │
-│         │                │                                       │
-│         ▼                ▼                                       │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │                    12 Service Managers                      │ │
 │  │  Data · History · Layer · Selection · Color · Render        │ │
 │  │  Plugin · App · Resource · Shortcut · UI · Task             │ │
+│  │                    (Cordis services)                         │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                          │                                       │
 │                          ▼                                       │
@@ -106,14 +88,19 @@ This crate contains **only data structures** — no service logic, no plugin fra
 │  │  256×256 sparse tiles · Arc COW · dirty tracking            │ │
 │  │  Timeline (dual-track) · Mask/Selection · Effects           │ │
 │  └─────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │              Plugin Registry (Cordis service)                │ │
+│  │  ← WASM / native / AI-generated tools                       │ │
+│  └─────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 - **Core services are not plugins** — they are host infrastructure that plugins depend on via `Inject`.
 - **Tools are plugins** — every menu command comes from the registry; the host never hard-codes one.
-- **Single write path** — all document mutations go through `DataService::apply_mutation`; undo is COW snapshot restoration.
+- **Single write path** — all document mutations go through `DataService`; undo is COW snapshot restoration.
 - **Five modes, one model** — Vector / Pixel / Painting / Typography / Animation all operate on the same scene graph.
-- All events are dispatched through Cordis (`Context::emit` / `Context::on`); subscriptions are auto-removed when their plugin fiber is disposed.
+- All events are dispatched through Cordis (`Context::emit` / `Context::on`).
 
 ## Quick start
 
@@ -123,10 +110,8 @@ cargo build --workspace
 cargo test --workspace
 
 # CLI
-cargo run -p kaleido-cli -- info path/to/image.png
-cargo run -p kaleido-cli -- list-formats
-cargo run -p kaleido-cli -- brightness --value 40 in.png out.png
-cargo run -p kaleido-cli -- invert in.png out.png
+cargo run -p kaleido-cli -- status     # Show service layer status
+cargo run -p kaleido-cli -- demo       # Run end-to-end workflow demo
 
 # Desktop (opens a window; optionally pass an image path)
 cargo run -p kaleido-desktop [path/to/image.png]
@@ -142,7 +127,7 @@ Tools are the unit of plugin functionality. A plugin is a crate that implements 
 ```rust
 use cordis::{Inject, PluginHandle, PluginOutput, plugin_sync};
 use kaleido_core::{ImageResult, Pixel, TiledImage};
-use kaleido_traits::{Tool, ToolParams, ToolRegistry};
+use kaleido_traits::plugins::{Tool, ToolParams};
 use std::sync::Arc;
 
 pub struct InvertTool;
@@ -164,7 +149,7 @@ impl Tool for InvertTool {
 
 pub fn invert_tool_plugin() -> PluginHandle {
     plugin_sync::<(), _>("tool.invert", Inject::new(["tool_registry"]), |ctx, _config| {
-        let registry: Arc<dyn ToolRegistry> = kaleido_traits::resolve_tool_registry(&ctx)?;
+        let registry = ctx.require::<Arc<dyn kaleido_traits::plugins::ToolRegistry>>("tool_registry")?;
         let tool: Arc<dyn Tool> = Arc::new(InvertTool);
         registry.register(Arc::downgrade(&tool));
         Ok(PluginOutput::disposer(move || {
@@ -186,31 +171,24 @@ crates/
                          types · tile_core · tile · pixel · pixel_layer
                          scene · vector · text · mask · timeline · effects
                          color_profile · document · format · conversion
-  kaleido-traits/       Contracts: 12 service traits + legacy tool contracts
-                         services/ (data, history, layer, selection, color,
-                                    render, plugin, app, resource, shortcut,
-                                    ui, task)
-                         (legacy: tool, interactive_tool, panel, selection_tool,
-                                  analysis_tool, image_store, history_keeper,
-                                  file_codec, ai_agent, events, keyboard)
-  kaleido-services/     Implementations: 12 service managers + legacy services
-                         managers/ (data, history, layer, selection, color,
-                                    render, app, resource, shortcut, ui, task)
-                         plugin_service/ (manifest, loader, manager, wasmtime)
-                         (legacy: image_store, file_codec, history_keeper,
-                                  layer_store, tool_registry, panel_registry,
-                                  ai_agent, interactive_tool, op_graph,
-                                  blend_simd, async_io)
+  kaleido-traits/       Service contracts + plugin contracts
+                         services/      (data, history, layer, selection, color,
+                                         render, plugin, app, resource, shortcut,
+                                         ui, task)
+                         plugins/       (tool, panel, events, category, cursor)
+  kaleido-services/     Implementations of 12 service managers
+                         app/ · color/ · data/ · history/ · layer/
+                         plugin/ · render/ · resource/ · selection/
+                         shortcut/ · task/ · ui/
   kaleido-sdk/          Plugin SDK: ToolPlugin builder + define_tool! macro
 apps/
-  cli/                  Command-line image tool
-  desktop/              GPUI desktop host (canvas, toolbar, status bar, dock)
+  cli/                  CLI demo of 12-manager architecture
+  desktop/              GPUI desktop host (canvas, dock, status bar)
 plugins/
   examples/tga/         TGA format codec plugin
   wasm/simple_format/   WASM plugin example (compiled .wasm + .wit)
 wit/                    WASM interface definitions (tool, lifecycle, host functions)
-docs/                   Architecture docs (refactor overview, data model,
-                         service layout, services refactor)
+docs/                   Architecture docs
 tests/                  Integration test fixtures (placeholder)
 ```
 
@@ -218,42 +196,26 @@ tests/                  Integration test fixtures (placeholder)
 
 ### Completed
 - [x] Core image library (Tile + TiledImage + SIMD pixel conversion)
-- [x] Service layer (store / codec / history / events) on Cordis
-- [x] **Op Graph execution engine** (DAG, ROI-driven, tile-parallel, point-op fusion)
-- [x] **Canvas service** (viewport math, progressive rendering; GPU rendering delegated to desktop)
-- [x] **Async I/O** (AsyncImageLoader + BackgroundSaver)
-- [x] **Dirty-tile undo** (TileHistoryKeeper, memory ∝ modified region)
-- [x] **Layer system** (LayerStack + 13 blend modes)
-- [x] **SIMD blend modes** (11 modes, 8 pixels/iteration)
-- [x] Tool plugin contract + example plugins (native, in-process)
-- [x] **InteractiveTool contract** (pointer-event stream, `ToolContext`, dirty-tile tracking)
-- [x] **InteractiveToolRunner** (stroke executor with undo, working buffer, dirty tracking)
-- [x] **Brush reference plugin** (round brush, pressure sensitivity, stroke interpolation)
-- [x] Tool parameter schemas (auto-generated UI forms)
-- [x] File format codec plugin system
-- [x] Plugin SDK (`kaleido-sdk`): `ToolPlugin` builder + `define_tool!` macro
-- [x] Plugin host framework (in `kaleido-services` / `plugin_service`) + `AIToolGenerator`
-- [x] WIT interface definitions for the WASM boundary
-- [x] WASM runtime (`wasmtime`) — load compiled `.wasm` tool plugins
-- [x] GPUI desktop host with dynamic plugin toolbar, menu bar, keyboard shortcuts, and file I/O
 - [x] **Unified Document data model** (Scene Graph, PixelLayer, VectorObject, TextObject, Mask/Selection, Timeline, Effects, ColorProfile)
+- [x] **12 service managers** (Data, History, Layer, Selection, Color, Render, Plugin, App, Resource, Shortcut, UI, Task)
 - [x] **Five editing modes** (Vector / Pixel / Painting / Typography / Animation) on one unified model
-- [x] **12 service managers** (Data, History, Layer, Selection, Color, Render, Plugin, App, Resource, Shortcut, UI, Task) with single-write-path architecture
-- [x] **Dock system** replacing fixed panel layout in desktop host
+- [x] **Desktop host** with Canvas rendering, dock system, file I/O, undo/redo
+- [x] **AppSettings management** (default canvas size, undo limit, auto-save, plugin dirs, default mode)
+- [x] **Plugin contracts** organized into `plugins/` submodule
 - [x] **TGA codec plugin** example
-- [x] **WASM simple_format plugin** example (compile to `.wasm` and load via wasmtime)
+- [x] **WASM simple_format plugin** example
 - [x] **Document format** (`.kld` chunk-based native format)
+- [x] **190 tests** across workspace
 
 ### TODO
-- [ ] Desktop host migration to new Document model
-- [ ] AI-generated tools end-to-end (generate → compile → load → `tool_upgraded`)
 - [ ] Advanced blend modes (Hard Light SIMD optimization)
-- [ ] Mask system enhancements (feathering, vector masks, etc.)
+- [ ] Mask system enhancements (feathering, vector masks)
 - [ ] Selection overlay rendering (marching ants animation)
 - [ ] Brush engine presets (texture, dynamics, blending)
 - [ ] Text engine details: vertical layout / RTL / line-letter spacing
-- [ ] Animation memory strategy (frame limit, unmodified frame sharing details)
+- [ ] Animation memory strategy (frame limit, unmodified frame sharing)
 - [ ] `.kld` serialization format finalization
+- [ ] AI-generated tools end-to-end
 
 ## License
 
