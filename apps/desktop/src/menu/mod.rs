@@ -8,6 +8,12 @@ use gpui_component::{h_flex, ActiveTheme as _, StyledExt as _};
 pub struct MenuBar {
     focus_handle: FocusHandle,
     open_menu: Option<MenuKind>,
+    /// Pre-built popup menus (created once).
+    file_popup: Option<Entity<PopupMenu>>,
+    edit_popup: Option<Entity<PopupMenu>>,
+    view_popup: Option<Entity<PopupMenu>>,
+    mode_popup: Option<Entity<PopupMenu>>,
+    help_popup: Option<Entity<PopupMenu>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,10 +34,22 @@ const MENU_LABELS: &[(MenuKind, &str)] = &[
 ];
 
 impl MenuBar {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // Build all popups once at creation time.
+        let file_popup = Self::build_file_popup(window, cx);
+        let edit_popup = Self::build_edit_popup(window, cx);
+        let view_popup = Self::build_view_popup(window, cx);
+        let mode_popup = Self::build_mode_popup(window, cx);
+        let help_popup = Self::build_help_popup(window, cx);
+
         Self {
             focus_handle: cx.focus_handle(),
             open_menu: None,
+            file_popup: Some(file_popup),
+            edit_popup: Some(edit_popup),
+            view_popup: Some(view_popup),
+            mode_popup: Some(mode_popup),
+            help_popup: Some(help_popup),
         }
     }
 
@@ -44,40 +62,60 @@ impl MenuBar {
         cx.notify();
     }
 
-    fn build_popup(&self, kind: MenuKind, window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
+    fn build_file_popup(window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
         PopupMenu::build(window, cx, |menu, _window, _cx| {
-            match kind {
-                MenuKind::File => menu
-                    .item(PopupMenuItem::new("打开").action(Box::new(OpenFileAction)))
-                    .item(PopupMenuItem::new("保存").action(Box::new(SaveAction)))
-                    .item(PopupMenuItem::new("另存为").action(Box::new(SaveAsAction)))
-                    .item(PopupMenuItem::separator())
-                    .item(PopupMenuItem::new("退出").action(Box::new(ExitAction))),
-                MenuKind::Edit => menu
-                    .item(PopupMenuItem::new("撤销 (Ctrl+Z)").action(Box::new(UndoAction)))
-                    .item(PopupMenuItem::new("重做 (Ctrl+Shift+Z)").action(Box::new(RedoAction))),
-                MenuKind::View => menu
-                    .item(PopupMenuItem::new("放大").action(Box::new(ZoomInAction)))
-                    .item(PopupMenuItem::new("缩小").action(Box::new(ZoomOutAction)))
-                    .item(PopupMenuItem::new("适应窗口").action(Box::new(FitToWindowAction))),
-                MenuKind::Mode => menu
-                    .item(PopupMenuItem::new("像素").action(Box::new(ModePixelAction)))
-                    .item(PopupMenuItem::new("矢量").action(Box::new(ModeVectorAction)))
-                    .item(PopupMenuItem::new("绘画").action(Box::new(ModePaintAction)))
-                    .item(PopupMenuItem::new("排版").action(Box::new(ModeTypeAction)))
-                    .item(PopupMenuItem::new("动画").action(Box::new(ModeAnimationAction))),
-                MenuKind::Help => {
-                    menu.item(PopupMenuItem::new("关于 Kaleido").action(Box::new(AboutAction)))
-                }
-            }
+            menu.item(PopupMenuItem::new("打开").action(Box::new(OpenFileAction)))
+                .item(PopupMenuItem::new("保存").action(Box::new(SaveAction)))
+                .item(PopupMenuItem::new("另存为").action(Box::new(SaveAsAction)))
+                .item(PopupMenuItem::separator())
+                .item(PopupMenuItem::new("退出").action(Box::new(ExitAction)))
         })
+    }
+
+    fn build_edit_popup(window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
+        PopupMenu::build(window, cx, |menu, _window, _cx| {
+            menu.item(PopupMenuItem::new("撤销 (Ctrl+Z)").action(Box::new(UndoAction)))
+                .item(PopupMenuItem::new("重做 (Ctrl+Shift+Z)").action(Box::new(RedoAction)))
+        })
+    }
+
+    fn build_view_popup(window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
+        PopupMenu::build(window, cx, |menu, _window, _cx| {
+            menu.item(PopupMenuItem::new("放大").action(Box::new(ZoomInAction)))
+                .item(PopupMenuItem::new("缩小").action(Box::new(ZoomOutAction)))
+                .item(PopupMenuItem::new("适应窗口").action(Box::new(FitToWindowAction)))
+        })
+    }
+
+    fn build_mode_popup(window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
+        PopupMenu::build(window, cx, |menu, _window, _cx| {
+            menu.item(PopupMenuItem::new("像素").action(Box::new(ModePixelAction)))
+                .item(PopupMenuItem::new("矢量").action(Box::new(ModeVectorAction)))
+                .item(PopupMenuItem::new("绘画").action(Box::new(ModePaintAction)))
+                .item(PopupMenuItem::new("排版").action(Box::new(ModeTypeAction)))
+                .item(PopupMenuItem::new("动画").action(Box::new(ModeAnimationAction)))
+        })
+    }
+
+    fn build_help_popup(window: &mut Window, cx: &mut Context<Self>) -> Entity<PopupMenu> {
+        PopupMenu::build(window, cx, |menu, _window, _cx| {
+            menu.item(PopupMenuItem::new("关于 Kaleido").action(Box::new(AboutAction)))
+        })
+    }
+
+    fn get_popup(&self, kind: MenuKind) -> Option<Entity<PopupMenu>> {
+        match kind {
+            MenuKind::File => self.file_popup.clone(),
+            MenuKind::Edit => self.edit_popup.clone(),
+            MenuKind::View => self.view_popup.clone(),
+            MenuKind::Mode => self.mode_popup.clone(),
+            MenuKind::Help => self.help_popup.clone(),
+        }
     }
 }
 
 impl Render for MenuBar {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let has_open_menu = self.open_menu.is_some();
-
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .id("menu-bar")
             .items_center()
@@ -90,7 +128,7 @@ impl Render for MenuBar {
                 let is_open = self.open_menu == Some(*kind);
                 let kind = *kind;
 
-                // Each menu button is a relative container.
+                // Menu button.
                 let button = div()
                     .relative()
                     .px_2()
@@ -110,32 +148,28 @@ impl Render for MenuBar {
 
                 // If this menu is open, show the popup below the button.
                 if is_open {
-                    div()
-                        .relative()
-                        .child(button)
-                        .child(
-                            div()
-                                .absolute()
-                                .top(px(20.0))
-                                .left(px(0.0))
-                                .min_w(px(150.0))
-                                .bg(cx.theme().background)
-                                .border_1()
-                                .border_color(cx.theme().border)
-                                .rounded(px(4.0))
-                                .shadow_lg()
-                                .flex()
-                                .flex_col()
-                                .py_1()
-                                .child(self.build_popup(kind, window, cx)),
-                        )
-                        .into_any_element()
+                    if let Some(popup) = self.get_popup(kind) {
+                        div()
+                            .relative()
+                            .child(button)
+                            .child(
+                                div()
+                                    .absolute()
+                                    .top(px(20.0))
+                                    .left(px(0.0))
+                                    .min_w(px(150.0))
+                                    .child(popup),
+                            )
+                            .into_any_element()
+                    } else {
+                        button.into_any_element()
+                    }
                 } else {
                     button.into_any_element()
                 }
             }))
             // Spacer to push window controls to the right.
-            .child(if has_open_menu { div().flex_1() } else { div().flex_1() })
+            .child(div().flex_1())
     }
 }
 
