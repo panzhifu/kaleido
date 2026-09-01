@@ -26,11 +26,3 @@ wasmtime = "25"
 
 [dev-dependencies]
 criterion = "0.5"
-
-[[bench]]
-name = "blend_modes"
-harness = false
-
-[[bench]]
-name = "layer_composite"
-harness = false

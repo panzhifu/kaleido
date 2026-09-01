@@ -22,11 +22,6 @@ pub use data::DataServiceImpl;
 // Format codecs
 pub use data::format::FormatRegistry;
 
-// Async I/O
-pub use data::async_io::{
-    AsyncImageLoader, BackgroundSaver, LoadPriority, LoadRequestId, LoadState,
-};
-
 // Plugin service
 pub use plugin::{
     PluginError, PluginInfo, PluginResult, PluginService, PluginServiceImpl,

@@ -10,7 +10,6 @@ use std::sync::{Arc, RwLock};
 use cordis::{Context, Inject, PluginHandle, Service, service_sync};
 use kaleido_core::{Document, DocumentId, ImageSize, NodeContent, PixelLayer};
 
-pub mod async_io;
 pub mod format;
 
 use kaleido_traits::data::{DataService, ServiceError, ServiceResult};
