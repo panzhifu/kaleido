@@ -4,39 +4,56 @@
 
 Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**插件优先**的设计：宿主（CLI / 桌面端）只提供窗口、画布和服务容器；**每一个用户可见的功能都是插件**，通过 Cordis 管理的工具注册表动态加载。
 
+## 五种模式，统一数据模型
+
+Kaleido 支持**五种编辑模式**——矢量、像素、绘画、排版、动画——全部运行在统一的场景图文档模型上。切换模式只是改变编辑视角，底层数据结构不变。
+
 ## 功能特性
 
-### 核心库（`kaleido-core`）
-- `Tile` 使用 `Arc<Vec<u8>>` 实现零拷贝克隆与写时复制（COW）
-- `TiledImage`（`HashMap<TileCoord, Tile>`）128×128 分块存储：稀疏分配、tile 级并行、脏 tile 追踪
-- 5 种像素格式（RGBA8 / RGB8 / Gray8 / GrayA8 / RGBA16）
-- **SIMD 格式转换**：RGBA↔Gray、RGBA↔GrayA 共 4 条路径 SIMD 加速（`wide` crate，8 像素/次）；RGBA↔RGB 为标量实现
-- 裁剪、带重叠保护的区域复制、格式转换
-- SIMD 友好的行对齐、RGBA16 全精度映射
+### 核心库（`kaleido-core`）—— 纯数据结构
 
-### 服务层（`kaleido-traits` + `kaleido-services`）
-- **ImageStore** — 当前图像的"单一数据源"（单一写路径）
-- **FileCodec** — JPEG / PNG / WebP / TIFF 读写，BMP / GIF 只读
-- **FileCodecRegistry** — 按格式的编解码插件系统（`FormatCodec` trait），作为 **Cordis 服务**暴露；第三方插件可通过依赖注入在运行时注册新格式（如 AVIF）
-- **HistoryKeeper** — 基于有界快照命令的撤销/重做（默认 50 步）
-- **TileHistoryKeeper** — **脏 tile 撤销**：只存储修改的 tile，内存 ∝ 修改区域（非全图）
-- **ToolRegistry** — 插件提供的工具动态注册表
-- **InteractiveTool** — 指针事件流契约，供笔刷类工具使用（`on_mouse_down` / `on_mouse_drag` / `on_mouse_up` / `on_stroke_end`）；**宿主**负责屏幕→图像坐标转换、撤销快照和脏 tile 追踪 — 插件只需在 `ToolContext` 中绘制
-- **InteractiveToolRunner** — 笔触执行器，位于画布和插件之间：每笔触独立工作缓冲区，`begin_stroke` 时自动捕获撤销 tile，累积脏 tile，`end_stroke` 时提交到 `HistoryKeeper`
-- **Op Graph** — 类 GEGL 的操作图：DAG 结构、拓扑排序、ROI 驱动懒求值
-- **GraphExecutor** — Tile 级并行执行（rayon）、相邻 point-op 自动融合
-- **CanvasService** — 画布服务：视口变换数学（zoom/pan/rotate）与可见 tile 计算；实际 GPU 渲染由宿主（桌面端）负责
-- **ProgressiveRenderer** — 渐进渲染：Low → Medium → High 质量
-- **AsyncImageLoader** — tokio 异步加载：渐进预览（512px → 全分辨率）、三种优先级策略
-- **BackgroundSaver** — 后台保存不阻塞 UI
-- **LayerStack** — 图层系统：像素层 + 调整层（非破坏性）、13 种混合模式、基础蒙版支持（含蒙版反转）
-- **BlendMode SIMD** — 11 种混合模式 SIMD 优化（Normal/Multiply/Screen/Overlay/Darken/Lighten/Difference/Exclusion/ColorDodge/ColorBurn/SoftLight）
-- **AIAgent** — 模板驱动规划器（MVP）：关键词 → 工具序列；接口预留 LLM 模式（`AgentMode::Template/Llm/Hybrid`）
-- 类型化事件系统统一在 Cordis 之上（14 种事件名 + 类型化 payload，订阅随生命周期自动清理）
+本 crate **只包含数据结构**——无服务逻辑、无插件框架、无依赖注入。服务契约在 `kaleido-traits`，实现在 `kaleido-services`。
+
+- **基础类型**（`types.rs`）— `Point` / `Size` / `Color`（f32 RGBA）/ `Transform2D`（平移+旋转+缩放，动画友好）/ `BlendMode`（16 种变体）/ 稳定 ID（`NodeId` / `DocumentId` / `ResourceId` / `EffectId`）
+- **瓦片光栅**（`tile_core.rs` + `tile.rs`）— `Tile`（256×256 固定缓冲，**Arc 写时复制 + dirty 脏标记**）、`TiledImage`（稀疏瓦片图：只分配实际绘制区域）、像素读写、批量填充、裁剪、区域拷贝、格式转换
+- **场景图**（`scene.rs`）— `Scene` 对象树，支持增删/重挂/环引用拒绝/重排序/子树移除/树完整性校验；`Node` 含 `transform` / `opacity` / `visible` / `locked` / `blend` / `mask` / `effects`
+- **节点内容** — `PixelLayer` + `FramePixels`（逐帧瓦片快照：静态 1 帧，动画多帧，未改帧 Arc 共享）、`VectorObject`（节点式贝塞尔路径：锚点 + 入/出控制点，FillStyle / StrokeStyle）、`TextObject`（富文本 `TextRun`：字体/字号/粗斜体，对齐，定宽文本框）
+- **蒙版与选区**（`mask.rs`）— `Mask`（图层蒙版 / 矢量蒙版）+ `SelectionMask`（灰度蒙版，None = 全选）——**同一套灰度结构互转**（PS 模型）
+- **动画**（`timeline.rs`）— 双轨：**逐帧手绘**（Krita 式，走 `PixelLayer.frames`）+ **属性关键帧**（AE 式，走 `Timeline.tracks` + `Keyframe` / `Easing` / `AnimValue`）
+- **效果链**（`effects.rs`）— `EffectBinding`（插件提供的效果 ID + JSON 参数 + 作用域）/ `EffectScope`（SelfOnly 滤镜 / Subtree 调整层语义）；调整层**不做内置节点**，改为插件效果链
+- **色彩管理**（`color_profile.rs`）— `ColorSpace`（sRGB / linear / CMYK / Lab）+ 位深 + ICC 引用
+- **文档格式**（`format.rs`）— `.kld` 原生格式：魔数 + 版本 + 分块（文档 + 缩略图）
+- **文档**（`document.rs`）— 顶层聚合：`size` / `dpi` / `color_profile` / `scene` / `selection` / `history` / `timeline` / `resources` / `metadata`
+
+### 服务层（`kaleido-traits` + `kaleido-services`）—— 12 管理器
+
+| # | 管理器 | service id | 职责 |
+|---|--------|-----------|------|
+| 1 | **数据 Data** | `data_service` | 文档生命周期、单一写路径（`apply_mutation`）、撤销快照恢复、导出 |
+| 2 | **历史 History** | `history_service` | 基于 COW 快照恢复的撤销/重做 |
+| 3 | **图层 Layer** | `layer_service` | 场景节点的增删/重排序/重命名/不透明度/混合模式 |
+| 4 | **选区 Selection** | `selection_service` | 选区蒙版：设置/清除/反转/相加/相交/相减 |
+| 5 | **颜色 Color** | `color_service` | 色彩配置、色卡管理 |
+| 6 | **渲染 Render** | `render_service` | 场景合成（自底向上，混合+不透明度）、导出扁平化 |
+| 7 | **插件 Plugin** | `plugin_service` | 插件清单/加载/生命周期、WASM 运行时（wasmtime）、工具注册表 |
+| 8 | **软件 App** | `app_service` | 应用名称/版本、编辑模式、通知 |
+| 9 | **资源 Resource** | `resource_service` | 字体/色卡/笔刷资源管理 |
+| 10 | **快捷键 Shortcut** | `shortcut_service` | 全局/模式/插件快捷键注册与解析 |
+| 11 | **UI** | `ui_service` | 状态栏、通知、面板注册 |
+| 12 | **任务 Task** | `task_service` | 后台任务 spawn/进度/取消/等待 |
+
+**核心设计 —— 单一写路径**：所有文档级变更**只允许**通过 `DataService::apply_mutation(label, f)` 进入：
+
+1. COW clone 当前 Document 为 before 快照（Arc 共享瓦片，零成本）
+2. 执行 `f(&mut Document)`（若失败：不动、不记录）
+3. before 快照压入 undo 栈；清空 redo 栈
+4. 发出 `document_changed` 事件
+
+**旧模型服务**（基于旧 `TiledImage` 模型）保留以兼容：`ImageStore`、`HistoryKeeper`、`LayerStore`、`FileCodecRegistry`、`ToolRegistry`、`PanelRegistry`、`AIAgent`、`InteractiveToolRunner`、`OpGraph`、`BlendMode SIMD`、`AsyncImageLoader`、`BackgroundSaver`。待桌面端迁移到新模型后可移除。
 
 ### 应用层
 - **`kaleido-cli`** — 图像信息 / 格式转换 / 列出格式 / 亮度 / 反相 / 缩放 / 灰度化，以及插件命令：`list-tools`、`tool-schema`、`run`（自定义参数）、`create-tool`（AI 生成工具）
-- **`kaleido-desktop`** — GPUI 宿主：画布直接从 `ImageStore` 渲染，**从插件注册表动态生成的工具栏**，活动 `InteractiveTool` 接收指针事件，完整的**键盘快捷键**（Ctrl+Z 撤销、Ctrl+Shift+Z 重做、Ctrl+O 打开、Ctrl+S 保存、Ctrl+Shift+S 另存为），**菜单栏**（文件 / 编辑 / 视图 / 模式 / 帮助），**状态栏**显示撤销/重做步数和文件操作反馈
+- **`kaleido-desktop`** — GPUI 宿主：画布直接从 `ImageStore` 渲染，**从插件注册表动态生成的工具栏**，活动 `InteractiveTool` 接收指针事件，完整的**键盘快捷键**（Ctrl+Z 撤销、Ctrl+Shift+Z 重做、Ctrl+O 打开、Ctrl+S 保存、Ctrl+Shift+S 另存为），**菜单栏**（文件 / 编辑 / 视图 / 模式 / 帮助），**状态栏**显示撤销/重做步数和文件操作反馈，** Dock 系统**（替代旧固定面板布局）实现灵活的面板排布
 
 ### 插件体系
 - `Tool` 契约（`kaleido-traits`）— 插件实现 `name` / `menu_path` / `description` / `apply`
@@ -51,13 +68,12 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 - **选区约束渲染** — `apply_to_selection()` 仅处理与选区相交的 tile（10000×10000 图像中 500×500 选区：6100 tile → 16 tile）
 - **参数 schema**（`ParamType` / `ParamSchema` / `ToolSchema`）— 自动生成 UI 表单、参数校验与默认值
 - **WIT 接口**（`wit/kaleido.wit`）— WASM 边界：`tool`、`plugin-lifecycle`、`host-functions` 接口 + `world kaleido-plugin`
-- **插件宿主**（`kaleido-plugin-host`）— `PluginManifest`、`Plugin`/`PluginLoader` trait、`PluginManager`、`AIToolGenerator`（动态生成工具）
 - **WASM 运行时** — 编译好的 `.wasm` 插件通过 **wasmtime** 加载执行：`WasmPluginManager` 扫描插件目录、实例化模块（C ABI：`plugin_init` / `tool_apply` 等）、把所有工具注册进注册表；宿主函数（`host_log`、`host_emit_event`）已链接
 - **WASM 选区优化** — 设置选区时仅交换选区包围盒区域（非全图），局部操作数据传输量降低 99%+
 - **插件 SDK**（`kaleido-sdk`）— `ToolPlugin<T>` builder + `define_tool!` 宏
 - **AI 工具生成** — `KaleidoApp::create_ai_tool(描述, 执行函数)` 从 JSON 描述注册工具并发出 `tool_upgraded` 事件
 - Cordis 服务插件：依赖注入（`Inject`）+ fiber 生命周期管理
-- 示例插件：[`plugins/examples/brightness`](plugins/examples/brightness)、[`plugins/examples/invert`](plugins/examples/invert)、[`plugins/examples/brush`](plugins/examples/brush)（交互式圆形笔刷，支持压感）
+- 示例插件：[`plugins/examples/tga`](plugins/examples/tga)（TGA 格式编解码插件）、[`plugins/wasm/simple_format`](plugins/wasm/simple_format)（WASM 插件示例）
 - **安装/卸载插件会动态增删命令，宿主零改动**
 
 ## 架构
@@ -74,30 +90,25 @@ Kaleido 是一个正在建设中的图像编辑器。它的架构刻意采用**�
 │         │                │                                        │
 │         ▼                ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │                    Op Graph Executor                         │ │
-│  │   [原图] → [brightness] → [blur] → [sharpen] → [输出]       │ │
-│  │   ROI 驱动 │ 自动合并 point-op │ 并行 tile 处理             │ │
+│  │                    12 个服务管理器                            │ │
+│  │  Data · History · Layer · Selection · Color · Render        │ │
+│  │  Plugin · App · Resource · Shortcut · UI · Task             │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                          │                                        │
 │                          ▼                                        │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │                    Tile Store (TiledImage)                   │ │
-│  │   HashMap<TileCoord, Arc<Tile>>                             │ │
-│  │   128×128 tiles │ LRU 脏 tile 缓存 │ 撤销只存脏 tile 旧版本  │ │
+│  │                    Document（统一数据模型）                    │ │
+│  │  Scene Graph → Node [PixelLayer | VectorObject | Text | Group]│
+│  │  256×256 稀疏瓦片 · Arc COW · 脏瓦片追踪                     │ │
+│  │  Timeline（双轨）· Mask/Selection · Effects                  │ │
 │  └─────────────────────────────────────────────────────────────┘ │
-│                          │                                        │
-│                          ▼                                        │
-│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────────┐ │
-│  │ FileCodec   │  │ pixel_convert│  │ HistoryKeeper           │ │
-│  │ Registry    │  │ (SIMD)       │  │ (脏 tile 快照)           │ │
-│  └─────────────┘  └──────────────┘  └─────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 - **核心服务不是插件** —— 它们是宿主基础设施，插件通过 `Inject` 依赖它们。
 - **工具才是插件** —— 每个菜单命令都来自注册表，宿主从不硬编码。
-- **Op Graph 统一处理引擎** —— 自动融合相邻 point-op，ROI 驱动只计算可见区域。
-- **Tile 级并行** —— rayon 多核处理不同 tile，SIMD 加速 tile 内像素操作。
+- **单一写路径** —— 所有文档变更通过 `DataService::apply_mutation` 进入；撤销 = COW 快照恢复。
+- **五种模式，统一模型** —— 矢量 / 像素 / 绘画 / 排版 / 动画全部运行在同一场景图上。
 - 所有事件经由 Cordis 分发（`Context::emit` / `Context::on`）；插件 fiber 销毁时订阅自动移除。
 
 ## 快速开始
@@ -161,27 +172,40 @@ pub fn invert_tool_plugin() -> PluginHandle {
 }
 ```
 
-完整示例见 [`plugins/examples/invert`](plugins/examples/invert)。
+完整示例见 [`plugins/examples/tga`](plugins/examples/tga)。
 
 ## 项目结构
 
 ```
 crates/
-  kaleido-core/       图像数据模型（TiledImage、Tile、Pixel、SIMD 格式转换）
-  kaleido-traits/     契约：FileCodec、ImageStore、HistoryKeeper、Tool、InteractiveTool、事件
-  kaleido-services/   实现 + Cordis 插件 + 应用容器（KaleidoApp）
-                      （InteractiveToolRunner、Op Graph、Layer、Tile History、Blend SIMD）
-  kaleido-sdk/        插件 SDK：ToolPlugin builder + define_tool! 宏
-  kaleido-plugin-host/插件宿主：manifest/loader/manager + wasmtime 运行时 + AIToolGenerator
+  kaleido-core/        文档数据模型（纯数据结构）
+                         types · tile_core · tile · pixel · pixel_layer
+                         scene · vector · text · mask · timeline · effects
+                         color_profile · document · format · conversion
+  kaleido-traits/      契约：12 个服务 trait + 旧版工具契约
+                         services/ (data, history, layer, selection, color,
+                                    render, plugin, app, resource, shortcut,
+                                    ui, task)
+                         (旧版: tool, interactive_tool, panel, selection_tool,
+                                  analysis_tool, image_store, history_keeper,
+                                  file_codec, ai_agent, events, keyboard)
+  kaleido-services/    实现：12 个服务管理器 + 旧版服务
+                         managers/ (data, history, layer, selection, color,
+                                    render, app, resource, shortcut, ui, task)
+                         plugin_service/ (manifest, loader, manager, wasmtime)
+                         (旧版: image_store, file_codec, history_keeper,
+                                  layer_store, tool_registry, panel_registry,
+                                  ai_agent, interactive_tool, op_graph,
+                                  blend_simd, async_io)
+  kaleido-sdk/         插件 SDK：ToolPlugin builder + define_tool! 宏
 apps/
-  cli/                命令行图像工具
-  desktop/            GPUI 桌面宿主（画布、工具栏、菜单栏、状态栏）
-plugins/examples/
-  brightness/         亮度工具插件（带参数 schema）
-  invert/             反相工具插件
-  brush/              交互式圆形笔刷插件（支持压感、描边插值）
+  cli/                 命令行图像工具
+  desktop/             GPUI 桌面宿主（画布、工具栏、状态栏、Dock）
+plugins/
+  examples/tga/        TGA 格式编解码插件
+  wasm/simple_format/  WASM 插件示例（编译好的 .wasm + .wit）
 wit/                  WASM 接口定义（tool、lifecycle、host functions）
-docs/                架构文档（architecture.md）
+docs/                 架构文档（重构总览、数据模型、服务布局、服务重构）
 tests/                集成测试夹具（占位）
 ```
 
@@ -203,18 +227,28 @@ tests/                集成测试夹具（占位）
 - [x] 工具参数 schema（自动生成 UI 表单）
 - [x] 文件格式编解码插件系统
 - [x] 插件 SDK（`kaleido-sdk`）：`ToolPlugin` builder + `define_tool!` 宏
-- [x] 插件宿主框架（`kaleido-plugin-host`）+ `AIToolGenerator`
+- [x] 插件宿主框架（并入 `kaleido-services` 的 `plugin_service`）+ `AIToolGenerator`
 - [x] WIT 接口定义（WASM 边界）
 - [x] WASM 运行时（wasmtime）— 加载编译好的 `.wasm` 工具插件
 - [x] GPUI 桌面宿主 + 动态插件工具栏 + 菜单栏 + 键盘快捷键 + 文件 I/O
+- [x] **统一 Document 数据模型**（Scene Graph、PixelLayer、VectorObject、TextObject、Mask/Selection、Timeline、Effects、ColorProfile）
+- [x] **五种编辑模式**（矢量 / 像素 / 绘画 / 排版 / 动画）统一模型
+- [x] **12 个服务管理器**（Data、History、Layer、Selection、Color、Render、Plugin、App、Resource、Shortcut、UI、Task）+ 单一写路径架构
+- [x] **Dock 系统**替代桌面端旧固定面板布局
+- [x] **TGA 编解码插件**示例
+- [x] **WASM simple_format 插件**示例（编译为 `.wasm` 并通过 wasmtime 加载）
+- [x] **文档格式**（`.kld` 分块原生格式）
 
 ### 待做
-- [ ] 示例 WASM 工具插件（把工具编译成 `.wasm` 并加载）
+- [ ] 桌面端迁移到新 Document 模型
 - [ ] AI 生成工具端到端（生成 → 编译 → 加载 → `tool_upgraded`）
 - [ ] 高级混合模式（Hard Light 等 SIMD 优化）
 - [ ] 蒙版系统增强（羽化、矢量蒙版等）
 - [ ] 选区叠加渲染（marching ants 动画）
 - [ ] 笔刷引擎预设（纹理、动态、混合）
+- [ ] 文本引擎细节：竖排 / RTL / 行距字距
+- [ ] 逐帧动画内存策略（帧上限、未修改帧共享细节）
+- [ ] `.kld` 序列化格式定稿
 
 ## 许可证
 
