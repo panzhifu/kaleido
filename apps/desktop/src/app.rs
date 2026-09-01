@@ -204,6 +204,9 @@ impl KaleidoEditor {
 
 impl Render for KaleidoEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Put the menu bar inside the TitleBar.
+        let title_bar = TitleBar::new().child(self.menu_bar.clone());
+
         v_flex()
             .size_full()
             .bg(cx.theme().background)
@@ -215,8 +218,7 @@ impl Render for KaleidoEditor {
             .on_action(cx.listener(Self::on_save))
             .on_action(cx.listener(Self::on_save_as))
             .on_action(cx.listener(Self::on_menu_toggle))
-            .child(TitleBar::new())
-            .child(self.menu_bar.clone())
+            .child(title_bar)
             .child(
                 div()
                     .flex_1()

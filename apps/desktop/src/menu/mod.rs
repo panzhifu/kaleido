@@ -2,9 +2,9 @@
 
 use gpui::*;
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
-use gpui_component::{ActiveTheme as _, StyledExt as _};
+use gpui_component::{h_flex, ActiveTheme as _, StyledExt as _};
 
-/// Menu bar component.
+/// Menu bar component - renders inside TitleBar.
 pub struct MenuBar {
     focus_handle: FocusHandle,
     open_menu: Option<MenuKind>,
@@ -75,65 +75,67 @@ impl MenuBar {
 }
 
 impl Render for MenuBar {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .w_full()
-            .h(px(28.0))
-            .bg(cx.theme().background)
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .flex()
-            .flex_row()
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let has_open_menu = self.open_menu.is_some();
+
+        h_flex()
+            .id("menu-bar")
             .items_center()
-            .px_2()
-            .track_focus(&self.focus_handle)
+            .h_full()
+            .flex_1()
+            .text_xs()
+            .gap_0()
+            .text_color(cx.theme().foreground)
             .children(MENU_LABELS.iter().map(|(kind, label)| {
                 let is_open = self.open_menu == Some(*kind);
                 let kind = *kind;
 
-                // Menu button with optional dropdown.
+                // Each menu button is a relative container.
+                let button = div()
+                    .relative()
+                    .px_2()
+                    .py_0p5()
+                    .rounded(px(4.0))
+                    .bg(if is_open {
+                        cx.theme().foreground.opacity(0.15)
+                    } else {
+                        cx.theme().background
+                    })
+                    .cursor_pointer()
+                    .child(*label)
+                    .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                        let action = MenuToggleAction(kind);
+                        cx.dispatch_action(&action);
+                    });
+
+                // If this menu is open, show the popup below the button.
                 if is_open {
                     div()
                         .relative()
-                        .child(
-                            div()
-                                .px_2()
-                                .py_0p5()
-                                .rounded(px(4.0))
-                                .bg(cx.theme().foreground.opacity(0.15))
-                                .text_xs()
-                                .text_color(cx.theme().foreground)
-                                .cursor_pointer()
-                                .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-                                    let action = MenuToggleAction(kind);
-                                    cx.dispatch_action(&action);
-                                })
-                                .child(*label),
-                        )
+                        .child(button)
                         .child(
                             div()
                                 .absolute()
-                                .top(px(24.0))
+                                .top(px(20.0))
                                 .left(px(0.0))
-                                .child(self.build_popup(kind, _window, cx)),
+                                .min_w(px(150.0))
+                                .bg(cx.theme().background)
+                                .border_1()
+                                .border_color(cx.theme().border)
+                                .rounded(px(4.0))
+                                .shadow_lg()
+                                .flex()
+                                .flex_col()
+                                .py_1()
+                                .child(self.build_popup(kind, window, cx)),
                         )
                         .into_any_element()
                 } else {
-                    div()
-                        .px_2()
-                        .py_0p5()
-                        .rounded(px(4.0))
-                        .text_xs()
-                        .text_color(cx.theme().foreground)
-                        .cursor_pointer()
-                        .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-                            let action = MenuToggleAction(kind);
-                            cx.dispatch_action(&action);
-                        })
-                        .child(*label)
-                        .into_any_element()
+                    button.into_any_element()
                 }
             }))
+            // Spacer to push window controls to the right.
+            .child(if has_open_menu { div().flex_1() } else { div().flex_1() })
     }
 }
 
