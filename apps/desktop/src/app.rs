@@ -38,14 +38,13 @@ actions!(
 
 use crate::canvas::Canvas;
 use crate::dock::{create_dock_area, save_layout};
-use crate::menu::{MenuKind, MenuToggleAction};
+use crate::menu::{MenuBar, MenuKind, MenuToggleAction};
 use crate::status_bar::StatusBar;
-use crate::toolbar::Toolbar;
 
 /// The main Kaleido editor.
 pub struct KaleidoEditor {
     focus_handle: FocusHandle,
-    toolbar: Entity<Toolbar>,
+    menu_bar: Entity<MenuBar>,
     dock_area: Entity<gpui_component::dock::DockArea>,
     canvas: Entity<Canvas>,
     status_bar: Entity<StatusBar>,
@@ -68,6 +67,7 @@ impl KaleidoEditor {
 
         let app = cx.global::<GlobalKaleidoApp>().clone();
         let canvas = cx.new(|cx| Canvas::new(app, cx));
+        let menu_bar = cx.new(|cx| MenuBar::new(cx));
 
         // Load initial file if provided via command line.
         if let Some(path) = initial_path {
@@ -113,11 +113,9 @@ impl KaleidoEditor {
                 .add_right_item("100%")
         });
 
-        let toolbar = cx.new(|_cx| Toolbar::new());
-
         Self {
             focus_handle,
-            toolbar,
+            menu_bar,
             dock_area,
             canvas,
             status_bar,
@@ -197,36 +195,15 @@ impl KaleidoEditor {
         cx.notify();
     }
 
-    /// Renders a menu button as a TitleBar child element.
-    fn render_menu_button(label: &'static str, kind: MenuKind, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let kind = kind;
-        div()
-            .px_2()
-            .py_0p5()
-            .rounded(px(4.0))
-            .text_xs()
-            .text_color(cx.theme().foreground)
-            .cursor_pointer()
-            .hover(|s| s.bg(cx.theme().foreground.opacity(0.1)))
-            .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-                let action = MenuToggleAction(kind);
-                cx.dispatch_action(&action);
-            })
-            .child(label)
-            .into_any_element()
+    fn on_menu_toggle(&mut self, action: &MenuToggleAction, _window: &mut Window, cx: &mut Context<Self>) {
+        self.menu_bar.update(cx, |menu_bar, cx| {
+            menu_bar.toggle_menu(action.0, cx);
+        });
     }
 }
 
 impl Render for KaleidoEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Create menu buttons as children of the TitleBar.
-        let title_bar = TitleBar::new()
-            .child(Self::render_menu_button("文件", MenuKind::File, cx))
-            .child(Self::render_menu_button("编辑", MenuKind::Edit, cx))
-            .child(Self::render_menu_button("视图", MenuKind::View, cx))
-            .child(Self::render_menu_button("模式", MenuKind::Mode, cx))
-            .child(Self::render_menu_button("帮助", MenuKind::Help, cx));
-
         v_flex()
             .size_full()
             .bg(cx.theme().background)
@@ -237,8 +214,9 @@ impl Render for KaleidoEditor {
             .on_action(cx.listener(Self::on_open_file))
             .on_action(cx.listener(Self::on_save))
             .on_action(cx.listener(Self::on_save_as))
-            .child(title_bar)
-            .child(self.toolbar.clone())
+            .on_action(cx.listener(Self::on_menu_toggle))
+            .child(TitleBar::new())
+            .child(self.menu_bar.clone())
             .child(
                 div()
                     .flex_1()

@@ -101,7 +101,11 @@ impl BasePanel for CanvasPanel {
     }
 }
 
-impl Panel for CanvasPanel {}
+impl Panel for CanvasPanel {
+    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div() // Empty title
+    }
+}
 
 impl EventEmitter<PanelEvent> for CanvasPanel {}
 
@@ -146,7 +150,11 @@ impl BasePanel for PlaceholderPanel {
     }
 }
 
-impl Panel for PlaceholderPanel {}
+impl Panel for PlaceholderPanel {
+    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div() // Empty title
+    }
+}
 
 impl EventEmitter<PanelEvent> for PlaceholderPanel {}
 
