@@ -1,7 +1,6 @@
 //! Main application structure — dock layout with canvas.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use gpui::*;
 use gpui_component::{ActiveTheme as _, TitleBar, v_flex};
@@ -50,10 +49,23 @@ pub struct KaleidoEditor {
 }
 
 impl KaleidoEditor {
+    /// Called after a document is loaded. Emits DocumentChanged on the canvas.
+    fn on_document_loaded(&mut self, cx: &mut Context<Self>) {
+        self.canvas.update(cx, |canvas, cx| {
+            canvas.refresh();
+            cx.emit(crate::canvas::CanvasEvent::DocumentChanged);
+            cx.notify();
+        });
+    }
+}
+
+impl KaleidoEditor {
     pub fn new(initial_path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
 
-        let canvas = cx.new(|cx| Canvas::new(cx));
+        let app = cx.global::<GlobalKaleidoApp>().clone();
+        let canvas = cx.new(|cx| Canvas::new(app, cx));
+
 
         // Load initial file if provided via command line.
         if let Some(path) = initial_path {
@@ -63,15 +75,18 @@ impl KaleidoEditor {
                     tracing::error!("failed to open initial file: {e}");
                 } else {
                     tracing::info!("loaded initial file: {path:?}");
+                    // Refresh canvas after loading.
+                    canvas.update(cx, |canvas, cx| {
+                        canvas.refresh();
+                        cx.emit(crate::canvas::CanvasEvent::DocumentChanged);
+                        cx.notify();
+                    });
                 }
             }
         }
 
-        // Refresh canvas when document changes.
-        cx.subscribe(&canvas, move |_this, _canvas, _ev: &crate::canvas::CanvasEvent, cx| {
-            cx.notify();
-        })
-        .detach();
+        // Canvas handles its own re-render via cx.notify() after refresh().
+        // No need for KaleidoEditor to propagate the event.
 
         let (dock_area, _dock_skin) = create_dock_area(canvas.clone(), window, cx);
 
@@ -104,25 +119,25 @@ impl KaleidoEditor {
         }
     }
 
-    fn on_undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_undo(&mut self, _: &Undo, _window: &mut Window, cx: &mut Context<Self>) {
         if let Some(app) = cx.try_global::<GlobalKaleidoApp>() {
             if app.history_service().can_undo() {
                 if let Err(e) = app.history_service().undo() {
                     tracing::warn!("undo failed: {e}");
                 } else {
-                    cx.notify();
+                    self.on_document_loaded(cx);
                 }
             }
         }
     }
 
-    fn on_redo(&mut self, _: &Redo, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_redo(&mut self, _: &Redo, _window: &mut Window, cx: &mut Context<Self>) {
         if let Some(app) = cx.try_global::<GlobalKaleidoApp>() {
             if app.history_service().can_redo() {
                 if let Err(e) = app.history_service().redo() {
                     tracing::warn!("redo failed: {e}");
                 } else {
-                    cx.notify();
+                    self.on_document_loaded(cx);
                 }
             }
         }
@@ -157,8 +172,8 @@ impl KaleidoEditor {
                 Ok(()) => {
                     tracing::info!("document loaded: {path:?}");
                     // Notify the UI to refresh.
-                    let _ = this.update(cx, |_, cx| {
-                        cx.notify();
+                    let _ = this.update(cx, |this, cx| {
+                        this.on_document_loaded(cx);
                     });
                 }
                 Err(e) => {
