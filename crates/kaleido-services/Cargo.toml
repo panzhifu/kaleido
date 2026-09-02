@@ -22,7 +22,7 @@ crossbeam-channel.workspace = true
 rayon.workspace = true
 wide.workspace = true
 # WASM plugin runtime (was previously the kaleido-plugin-host crate)
-wasmtime = "25"
+wasmtime = "48"
 
 [dev-dependencies]
 criterion = "0.5"
