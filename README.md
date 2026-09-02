@@ -62,7 +62,7 @@ This crate contains **only data structures** — no service logic, no plugin fra
 
 ### Applications
 - **`kaleido-cli`** — demonstrates the 12-manager architecture with `status` and `demo` commands
-- **`kaleido-desktop`** — GPUI host with canvas rendering, resizable dock panels, keyboard shortcuts, file open/save, undo/redo, zoom, layer management
+- **`kaleido-desktop`** — GPUI host with canvas rendering, resizable dock panels, keyboard shortcuts, file open/save, undo/redo, zoom, layer management, i18n, async boot
 
 ### Desktop UI
 - **Resizable dock panels** — library-powered `DockArea` + `DockLayout` with drag-to-resize splits (left tools | center canvas | right layers/color)
@@ -74,6 +74,13 @@ This crate contains **only data structures** — no service logic, no plugin fra
 - **Canvas zoom** — zoom in/out/fit-to-window with real-time preview
 - **16 blend modes** — Normal, Multiply, Screen, Overlay, Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion, Hue, Saturation, Color, Luminosity
 - **Bitmap export** — save to PNG/JPEG/WebP/TIFF via codec registry
+- **i18n** — system locale detection (en/zh-CN)
+- **Async boot** — background service loading with splash screen
+
+### Persistence
+- **Settings** — saved to system config dir (`~/.config/kaleido/settings.json` on Linux)
+- **Shortcuts** — keyboard bindings persisted with settings
+- **Window state** — position/size restored on next launch
 
 ### Plugin system
 - Example plugins: [`plugins/examples/tga`](plugins/examples/tga) (TGA format codec), [`plugins/wasm/simple_format`](plugins/wasm/simple_format) (WASM plugin)
@@ -183,9 +190,8 @@ crates/
                          scene · vector · text · mask · timeline · effects
                          color_profile · document · format · conversion
   kaleido-traits/       Service contracts + plugin contracts
-                         services/      (data, history, layer, selection, color,
-                                         render, plugin, app, resource, shortcut,
-                                         ui, task)
+                         app · color · data · history · layer · plugin
+                         render · resource · selection · shortcut · task · ui
                          plugins/       (tool, panel, events, category, cursor)
   kaleido-services/     Implementations of 12 service managers
                          app/ · color/ · data/ · history/ · layer/
@@ -224,6 +230,11 @@ tests/                  Integration test fixtures (placeholder)
 - [x] **Bitmap export** (PNG/JPEG/WebP/TIFF)
 - [x] **Canvas zoom** (zoom in/out/fit)
 - [x] **WASM plugin** fixed (proper bump allocator)
+- [x] **Settings persistence** — save/load to system config dir
+- [x] **Shortcut persistence** — keyboard bindings saved with settings
+- [x] **i18n** — system locale detection (en/zh-CN)
+- [x] **Async boot** — background service loading with splash screen
+- [x] **CI/CD** — GitHub Actions lint/test/build/release
 
 ### TODO
 - [ ] Mask system enhancements (feathering, vector masks)

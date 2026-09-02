@@ -60,7 +60,28 @@ Kaleido 支持**五种编辑模式**——矢量、像素、绘画、排版、�
 
 ### 应用层
 - **`kaleido-cli`** — 演示 12 管理器架构，提供 `status` 和 `demo` 命令
-- **`kaleido-desktop`** — GPUI 宿主：画布渲染、可调整 Dock 面板、快捷键、文件打开/保存、撤销/重做、缩放、图层管理
+- **`kaleido-desktop`** — GPUI 宿主：画布渲染、可调整 Dock 面板、快捷键、文件打开/保存、撤销/重做、缩放、图层管理、多语言、异步启动
+
+### 桌面端 UI
+- **可调整 Dock 面板** — 基于 `DockArea` + `DockLayout`，支持拖动调整分割（左侧工具 | 中间画布 | 右侧图层/颜色）
+- **图层面板** — 添加/删除/选中图层，图层堆叠显示，高亮当前图层
+- **颜色面板** — 前景色色板、文档信息（尺寸、图层数）
+- **工具面板** — 工具按钮（移动工具），带激活状态
+- **状态栏** — 实时显示编辑模式、图层数、历史深度（撤销/重做）、缩放级别
+- **菜单栏** — 文件（打开/保存/另存为/退出）、编辑（撤销/重做）、视图（放大/缩小/适应窗口）、模式（像素/矢量/绘画/排版/动画）、帮助（关于）
+- **画布缩放** — 放大/缩小/适应窗口，实时预览
+- **16 种混合模式** — 正常、正片叠底、滤色、叠加、变暗、变亮、颜色减淡、颜色加深、强光、柔光、差值、排除、色相、饱和度、颜色、明度
+- **位图导出** — 通过编解码器保存为 PNG/JPEG/WebP/TIFF
+- **多语言** — 系统语言检测（en/zh-CN）
+- **异步启动** — 后台加载服务，显示加载界面
+
+### 持久化
+- **设置** — 保存到系统配置目录（Linux: `~/.config/kaleido/settings.json`）
+- **快捷键** — 快捷键绑定随设置一起保存
+- **窗口状态** — 位置/大小在下次启动时恢复
+
+### 插件体系
+- 示例插件：[`plugins/examples/tga`](plugins/examples/tga)（TGA 格式编解码）、[`plugins/wasm/simple_format`](plugins/wasm/simple_format)（WASM 插件）
 
 ### 桌面端 UI
 - **可调整 Dock 面板** — 基于 `DockArea` + `DockLayout`，支持拖动调整分割（左侧工具 | 中间画布 | 右侧图层/颜色）
@@ -180,9 +201,8 @@ crates/
                          scene · vector · text · mask · timeline · effects
                          color_profile · document · format · conversion
   kaleido-traits/      服务契约 + 插件契约
-                         services/      (data, history, layer, selection, color,
-                                         render, plugin, app, resource, shortcut,
-                                         ui, task)
+                         app · color · data · history · layer · plugin
+                         render · resource · selection · shortcut · task · ui
                          plugins/       (tool, panel, events, category, cursor)
   kaleido-services/    12 个服务管理器的实现
                          app/ · color/ · data/ · history/ · layer/
@@ -221,6 +241,11 @@ tests/                集成测试夹具（占位）
 - [x] **位图导出**（PNG/JPEG/WebP/TIFF）
 - [x] **画布缩放**（放大/缩小/适应窗口）
 - [x] **WASM 插件**修复（正确的 bump allocator）
+- [x] **设置持久化** — 保存/加载到系统配置目录
+- [x] **快捷键持久化** — 快捷键绑定随设置一起保存
+- [x] **多语言** — 系统语言检测（en/zh-CN）
+- [x] **异步启动** — 后台加载服务，显示加载界面
+- [x] **CI/CD** — GitHub Actions lint/test/build/release
 
 ### 待做
 - [ ] 蒙版系统增强（羽化、矢量蒙版）
