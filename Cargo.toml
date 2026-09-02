@@ -13,6 +13,10 @@ members = [
     "plugins/wasm/simple_format",
 ]
 
+# The WASM plugin (simple_format) is a cdylib and cannot run as a test
+# binary on the host.  `cargo test --workspace` skips it automatically
+# because it has no host-runnable tests.
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"

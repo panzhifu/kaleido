@@ -5,7 +5,8 @@
 
 use std::sync::{Arc, RwLock};
 
-use cordis::{Context, Inject, PluginHandle, Service, service_sync};
+
+use crate::{impl_service, service_plugin};
 use kaleido_core::{BlendMode, NodeContent, NodeId, PixelFormat, PixelLayer, Transform2D};
 use kaleido_traits::data::error::{ServiceError, ServiceResult};
 use kaleido_traits::data::DataService;
@@ -13,16 +14,14 @@ use kaleido_traits::layer::{LayerInfo, LayerService};
 
 /// Default implementation of [`LayerService`].
 pub struct LayerServiceImpl {
-    ctx: Context,
     data_service: Arc<dyn DataService>,
     /// Active layer id.
     active_layer: RwLock<Option<NodeId>>,
 }
 
 impl LayerServiceImpl {
-    pub fn new(ctx: Context, data_service: Arc<dyn DataService>) -> Self {
+    pub fn new(data_service: Arc<dyn DataService>) -> Self {
         Self {
-            ctx,
             data_service,
             active_layer: RwLock::new(None),
         }
@@ -54,28 +53,22 @@ impl LayerServiceImpl {
     }
 }
 
-impl Service for LayerServiceImpl {
-    const NAME: &'static str = "layer_service";
-}
+impl_service!(LayerServiceImpl, "layer_service");
 
-/// Installs the `layer_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<LayerServiceImpl, (), _>(
-        "layer_service",
-        Inject::none(),
-        |ctx, _config| {
-            let data_service: Arc<dyn DataService> = ctx
-                .get::<crate::data::DataServiceImpl>("data_service")?
-                .ok_or_else(|| -> cordis::CordisError {
-                    cordis::CordisError::with_message(
-                        cordis::ErrorCode::Other,
-                        String::from("data_service not found"),
-                    )
-                })?;
-            Ok(LayerServiceImpl::new(ctx, data_service))
-        },
-    )
-}
+service_plugin!(LayerServiceImpl, "layer_service",
+    deps: none,
+    build: |ctx, _config| {
+        let data_service: Arc<dyn DataService> = ctx
+            .get::<crate::data::DataServiceImpl>("data_service")?
+            .ok_or_else(|| -> cordis::CordisError {
+                cordis::CordisError::with_message(
+                    cordis::ErrorCode::Other,
+                    String::from("data_service not found"),
+                )
+            })?;
+        Ok(LayerServiceImpl::new(data_service))
+    }
+);
 
 // ── LayerService trait implementation ──────────────────────────────────────
 
@@ -239,6 +232,13 @@ impl LayerService for LayerServiceImpl {
         *active = Some(id);
         Ok(())
     }
+
+    fn layer_ids(&self) -> ServiceResult<Vec<NodeId>> {
+        self.with_doc(|doc| {
+            let root = doc.scene.root();
+            Ok(doc.scene.children(root).cloned().unwrap_or_default())
+        })
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -303,12 +303,15 @@ mod tests {
         fn restore(&self, snapshot: kaleido_core::Document) {
             *self.doc.write().unwrap_or_else(|e| e.into_inner()) = Some(snapshot);
         }
+        fn render_for_export(&self) -> ServiceResult<kaleido_core::TiledImage> {
+            Err(ServiceError::Other("not implemented".into()))
+        }
     }
 
     fn make_service() -> LayerServiceImpl {
         let doc = kaleido_core::Document::new(DocumentId(1), "test", 100, 100).unwrap();
         let fake = Arc::new(FakeDataService::new(doc));
-        LayerServiceImpl::new(Context::new(), fake)
+        LayerServiceImpl::new(fake)
     }
 
     #[test]

@@ -89,4 +89,8 @@ pub trait LayerService: Send + Sync + 'static {
 
     /// Sets the active layer.
     fn set_active(&self, id: NodeId) -> ServiceResult<()>;
+
+    /// All layer node IDs that are direct children of the scene root,
+    /// in paint order (bottom first).
+    fn layer_ids(&self) -> ServiceResult<Vec<NodeId>>;
 }

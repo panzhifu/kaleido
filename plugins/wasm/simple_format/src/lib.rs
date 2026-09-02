@@ -1,77 +1,152 @@
 //! Simple Format Plugin - WASM Module
 //!
 //! Exports format codec ABI functions for the Kaleido host.
+//!
+//! This crate is designed to compile to `wasm32-unknown-unknown`.  On that
+//! target it uses `#![no_std]` + a custom bump allocator.  For host-side
+//! `cargo check` / `cargo test` it falls back to `std` so the crate is
+//! type-checkable without the WASM target installed.
 
-#![no_std]
+#![cfg_attr(target_arch = "wasm32", no_std)]
 
-use core::alloc::{GlobalAlloc, Layout};
-use core::ptr;
+#[cfg(target_arch = "wasm32")]
+extern crate alloc;
 
-/// Simple bump allocator for WASM
-struct BumpAllocator;
+// ── Allocator (wasm32 only) ─────────────────────────────────────────────
 
-unsafe impl GlobalAlloc for BumpAllocator {
-    unsafe fn alloc(&self, _layout: Layout) -> *mut u8 {
-        let start = 64 * 1024;
-        start as *mut u8
+#[cfg(target_arch = "wasm32")]
+mod wasm_alloc {
+    use alloc::alloc::{GlobalAlloc, Layout};
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    const HEAP_START: usize = 64 * 1024;
+    const HEAP_SIZE: usize = 64 * 1024;
+
+    struct BumpAllocator {
+        offset: AtomicUsize,
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+    unsafe impl GlobalAlloc for BumpAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            let align = layout.align();
+            let size = layout.size();
+            let current = self.offset.load(Ordering::SeqCst);
+            let aligned = (current + align - 1) & !(align - 1);
+            let new_offset = aligned + size;
+            if new_offset > HEAP_SIZE {
+                return core::ptr::null_mut();
+            }
+            self.offset
+                .compare_exchange(current, new_offset, Ordering::SeqCst, Ordering::SeqCst)
+                .ok();
+            (HEAP_START + aligned) as *mut u8
+        }
+
+        unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+    }
+
+    #[global_allocator]
+    static ALLOCATOR: BumpAllocator = BumpAllocator {
+        offset: AtomicUsize::new(0),
+    };
 }
 
-#[global_allocator]
-static ALLOCATOR: BumpAllocator = BumpAllocator;
-
-/// Panic handler for WASM
-#[cfg(not(test))]
+/// Panic handler for WASM (no_std).  Not used on host.
+#[cfg(all(target_arch = "wasm32", not(test)))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-// ── Memory Management ────────────────────────────────────────────────────
+// ── Memory Management ABI ──────────────────────────────────────────────
 
-/// Allocate memory in WASM (stub - returns fixed address)
+/// Allocate memory in WASM.
+///
+/// On `wasm32-unknown-unknown` this delegates to the bump allocator.
+/// On the host target it uses the system allocator via `Vec`.
+#[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
 pub extern "C" fn alloc(size: i32) -> i32 {
-    // Simple bump allocator starting at 64KB
-    let _ = size;
-    65536 // Return fixed address
+    use alloc::alloc::Layout;
+    if size <= 0 {
+        return 0;
+    }
+    let layout = match Layout::from_size_align(size as usize, 1) {
+        Ok(l) => l,
+        Err(_) => return 0,
+    };
+    let ptr = unsafe { alloc::alloc::alloc(layout) };
+    if ptr.is_null() {
+        0
+    } else {
+        ptr as i32
+    }
 }
 
-/// Free memory in WASM (stub - no-op)
+/// Allocate memory (host stub).
+#[cfg(not(target_arch = "wasm32"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn alloc(size: i32) -> i32 {
+    if size <= 0 {
+        return 0;
+    }
+    let mut buf: Vec<u8> = vec![0u8; size as usize];
+    let ptr = buf.as_mut_ptr();
+    std::mem::forget(buf);
+    ptr as i32
+}
+
+/// Free memory in WASM.
+///
+/// On WASM this is a no-op (bump allocator).  On the host it frees the
+/// memory allocated by `alloc`.
+#[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
 pub extern "C" fn free(_ptr: i32, _size: i32) {
-    // No-op
+    // Bump allocator — no individual free.
 }
 
-// ── Format Codec ─────────────────────────────────────────────────────────
+/// Free memory (host stub).
+#[cfg(not(target_arch = "wasm32"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn free(ptr: i32, size: i32) {
+    if ptr == 0 || size <= 0 {
+        return;
+    }
+    unsafe {
+        let _ = Vec::from_raw_parts(ptr as *mut u8, size as usize, size as usize);
+    }
+}
 
-/// Decode an image file
-/// Returns: i64 (high = ptr, low = len)
+// ── Format Codec ────────────────────────────────────────────────────────
+
+/// Decode an image file.
+///
+/// Returns: i64 (high = ptr, low = len), or -1 on error.
+///
+/// This stub decodes any file as a single red RGBA pixel (1×1, 4 bytes).
 #[unsafe(no_mangle)]
 pub extern "C" fn format_decode(_path_ptr: i32, _path_len: i32) -> i64 {
-    // Allocate buffer for decoded data (4 bytes for RGBA pixel)
-    let ptr = alloc(16);
-
+    let ptr = alloc(4);
     if ptr == 0 {
         return -1;
     }
 
-    // Write simple RGBA pixel data (red pixel: 255, 0, 0, 255)
+    // Write a single red pixel (R=255, G=0, B=0, A=255).
     unsafe {
-        ptr::write_volatile((ptr as *mut u8).add(0), 255); // R
-        ptr::write_volatile((ptr as *mut u8).add(1), 0);   // G
-        ptr::write_volatile((ptr as *mut u8).add(2), 0);   // B
-        ptr::write_volatile((ptr as *mut u8).add(3), 255); // A
+        core::ptr::write_volatile(ptr as *mut u8, 255); // R
+        core::ptr::write_volatile((ptr as *mut u8).add(1), 0); // G
+        core::ptr::write_volatile((ptr as *mut u8).add(2), 0); // B
+        core::ptr::write_volatile((ptr as *mut u8).add(3), 255); // A
     }
 
     // Return handle: high=ptr, low=len(4)
-    ((ptr as i64) << 32) | (4 as i64)
+    ((ptr as i64) << 32) | 4
 }
 
-/// Encode image data to file
-/// Returns: i32 (0=success, -1=error)
+/// Encode image data to file.
+///
+/// Returns: 0 = success, -1 = error.
 #[unsafe(no_mangle)]
 pub extern "C" fn format_encode(
     _path_ptr: i32,
@@ -81,29 +156,118 @@ pub extern "C" fn format_encode(
     _width: i32,
     _height: i32,
 ) -> i32 {
-    0 // Success
+    0 // Success — stub always succeeds
 }
 
-// ── Plugin Lifecycle ─────────────────────────────────────────────────────
+// ── Plugin Lifecycle ────────────────────────────────────────────────────
 
-/// Plugin initialization
+/// Plugin initialization.
 #[unsafe(no_mangle)]
 pub extern "C" fn plugin_init() {}
 
-/// Get plugin manifest JSON
+// ── Manifest & Metadata (wasm32 only; host returns 0) ───────────────────
+
+/// Manifest JSON describing this plugin.
+#[cfg(target_arch = "wasm32")]
+static MANIFEST: &[u8] = br#"{
+    "name": "simple_format",
+    "version": "0.1.0",
+    "description": "Simple format codec stub for Kaleido",
+    "author": "Kaleido Team",
+    "kind": "wasm",
+    "formats": [
+        { "name": "simple", "extensions": ["simple"], "can_read": true, "can_write": true }
+    ]
+}"#;
+
+/// Get plugin manifest JSON pointer.
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_manifest_json() -> i32 {
+    MANIFEST.as_ptr() as i32
+}
+
+/// Get plugin manifest JSON pointer (host stub).
+#[cfg(not(target_arch = "wasm32"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn plugin_manifest_json() -> i32 {
     0
 }
 
-/// Get format name
+/// Get manifest JSON length.
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_manifest_json_len() -> i32 {
+    MANIFEST.len() as i32
+}
+
+/// Get manifest JSON length (host stub).
+#[cfg(not(target_arch = "wasm32"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_manifest_json_len() -> i32 {
+    0
+}
+
+/// Format name.
+#[cfg(target_arch = "wasm32")]
+static FORMAT_NAME: &[u8] = b"simple";
+
+/// Get format name pointer.
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn format_get_name() -> i32 {
+    FORMAT_NAME.as_ptr() as i32
+}
+
+/// Get format name pointer (host stub).
+#[cfg(not(target_arch = "wasm32"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn format_get_name() -> i32 {
     0
 }
 
-/// Get supported extensions
+/// Get format name length.
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn format_get_name_len() -> i32 {
+    FORMAT_NAME.len() as i32
+}
+
+/// Get format name length (host stub).
+#[cfg(not(target_arch = "wasm32"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn format_get_name_len() -> i32 {
+    0
+}
+
+/// Supported extensions.
+#[cfg(target_arch = "wasm32")]
+static FORMAT_EXTS: &[u8] = b"simple";
+
+/// Get supported extensions pointer.
+#[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
 pub extern "C" fn format_get_exts() -> i32 {
+    FORMAT_EXTS.as_ptr() as i32
+}
+
+/// Get supported extensions pointer (host stub).
+#[cfg(not(target_arch = "wasm32"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn format_get_exts() -> i32 {
+    0
+}
+
+/// Get supported extensions length.
+#[cfg(target_arch = "wasm32")]
+#[unsafe(no_mangle)]
+pub extern "C" fn format_get_exts_len() -> i32 {
+    FORMAT_EXTS.len() as i32
+}
+
+/// Get supported extensions length (host stub).
+#[cfg(not(target_arch = "wasm32"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn format_get_exts_len() -> i32 {
     0
 }

@@ -1,3 +1,6 @@
+// ── Service boilerplate macros ──────────────────────────────────────────
+pub mod macros;
+
 // ── Service-layer managers — one directory per service ─────────────────────
 // All 12 document-level and application-level managers.
 pub mod color;

@@ -1,9 +1,10 @@
 //! Dock module — layout management for the Kaleido workspace.
 
-pub mod actions;
-pub mod skin;
+pub mod active_tool;
+pub mod color_panel;
+pub mod layers_panel;
+pub mod tool_panel;
 pub mod workspace;
 
-pub use actions::*;
-pub use skin::default_skin;
-pub use workspace::{create_dock_area, save_layout, PlaceholderPanel};
+pub use active_tool::ActiveTool;
+pub use workspace::DockLayoutView;

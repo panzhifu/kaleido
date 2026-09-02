@@ -1,215 +1,76 @@
-//! Dock workspace — main layout definition.
+//! Dock workspace — uses the library's `DockArea` + `DockLayout` for
+//! fully resizable panels with drag-to-resize support.
+
+use std::sync::Arc;
 
 use gpui::*;
-use gpui_component::{ActiveTheme as _, StyledExt as _, dock::{
-    DockArea, DockAreaState, DockEvent, DockLayout, DockSkin, PanelEvent, Panel, panel_handle,
-}};
-use gpui_base::dock::Panel as BasePanel;
-use std::rc::Rc;
+use gpui_component::dock::{DockArea, DockLayout, DockSkin};
 
+use super::tool_panel::ToolPanel;
+use super::color_panel::ColorPanelProps;
+use super::layers_panel::LayersPanel;
+use super::ActiveTool;
+use crate::canvas::Canvas;
+use crate::GlobalKaleidoApp;
 
-
-/// Main dock area identifier.
-const MAIN_DOCK_AREA: &str = "main-dock";
-const DOCK_VERSION: usize = 1;
-
-/// State file for persisting dock layout.
-#[cfg(debug_assertions)]
-const STATE_FILE: &str = "target/dock-layout.json";
-#[cfg(not(debug_assertions))]
-const STATE_FILE: &str = "dock-layout.json";
-
-/// Creates the dock area with default layout.
-pub fn create_dock_area(
-    canvas: Entity<crate::canvas::Canvas>,
-    window: &mut Window,
-    cx: &mut App,
-) -> (Entity<DockArea>, Rc<DockSkin>) {
-    let (dock_area, skin) = DockSkin::dock_area(MAIN_DOCK_AREA, Some(DOCK_VERSION), window, cx);
-
-    // Try to load saved layout, or use default.
-    match load_layout(dock_area.clone(), window, cx) {
-        Ok(_) => tracing::info!("dock layout loaded"),
-        Err(_) => {
-            tracing::info!("using default dock layout");
-            set_default_layout(canvas, dock_area.clone(), window, cx);
-        }
-    }
-
-    (dock_area, skin)
-}
-
-/// Sets the default dock layout.
-fn set_default_layout(
-    canvas: Entity<crate::canvas::Canvas>,
+/// Dock workspace — library-powered resizable panels.
+pub struct DockLayoutView {
     dock_area: Entity<DockArea>,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    tracing::info!("set_default_layout start");
-    // Left panel placeholder
-    let left = DockLayout::tabs().panel_view(
-        panel_handle(cx.new(|cx| PlaceholderPanel::new("Tools", "左侧工具面板", cx))),
-        cx,
-    );
-
-    // Right panel placeholder
-    let right = DockLayout::tabs().panel_view(
-        panel_handle(cx.new(|cx| PlaceholderPanel::new("Properties", "右侧属性面板", cx))),
-        cx,
-    );
-
-    // Bottom panel placeholder
-    let bottom = DockLayout::tabs().panel_view(
-        panel_handle(cx.new(|cx| PlaceholderPanel::new("History", "底部历史面板", cx))),
-        cx,
-    );
-
-    // Center panel — the canvas (wrapped in a dock-compatible panel)
-    let canvas_panel = cx.new(|cx| CanvasPanel::new(canvas, cx));
-    let center = DockLayout::tabs().panel_view(panel_handle(canvas_panel), cx);
-
-    // Build layout: left | center | right
-    let main_split = DockLayout::h_split()
-        .child(left, Some(px(200.)))
-        .child(center, None)
-        .child(right, Some(px(250.)));
-
-    // Build layout: main_split / bottom
-    let full_layout = DockLayout::v_split()
-        .child(main_split, None)
-        .child(bottom, Some(px(150.)));
-
-    dock_area.update(cx, |area, cx| {
-        area.set_center(full_layout, window, cx);
-    });
+    _skin: std::rc::Rc<DockSkin>,
 }
 
-/// A dock-compatible panel that wraps the Canvas.
-pub struct CanvasPanel {
-    canvas: Entity<crate::canvas::Canvas>,
-}
+impl DockLayoutView {
+    pub fn new(
+        app: GlobalKaleidoApp,
+        canvas: Entity<Canvas>,
+        active_tool: Entity<ActiveTool>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let (dock_area, skin) =
+            DockSkin::dock_area("main-dock", Some(1), window, cx);
 
-impl CanvasPanel {
-    pub fn new(canvas: Entity<crate::canvas::Canvas>, cx: &mut Context<Self>) -> Self {
-        Self { canvas }
-    }
-}
+        // ── Build panels ────────────────────────────────────────
+        let tool_panel = cx.new(|cx| ToolPanel::new(active_tool.clone(), cx));
+        let layers_panel = cx.new(|cx| LayersPanel::new(app.clone(), cx));
+        let color_panel = cx.new(|cx| ColorPanelProps::new(app.clone(), cx));
 
-impl BasePanel for CanvasPanel {
-    fn panel_name(&self) -> &'static str {
-        "Canvas"
-    }
-}
+        // ── Left: tools ─────────────────────────────────────────
+        let left = DockLayout::tabs().panel_view(Arc::new(tool_panel), cx);
 
-impl Panel for CanvasPanel {
-    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div() // Empty title
-    }
-}
+        // ── Right: layers + color (vertical split) ──────────────
+        let right = DockLayout::v_split()
+            .child(
+                DockLayout::tabs().panel_view(Arc::new(layers_panel), cx),
+                None,
+            )
+            .child(
+                DockLayout::tabs().panel_view(Arc::new(color_panel), cx),
+                Some(px(180.)),
+            );
 
-impl EventEmitter<PanelEvent> for CanvasPanel {}
+        // ── Center: canvas ──────────────────────────────────────
+        let center = DockLayout::tabs().panel_view(Arc::new(canvas), cx);
 
-impl Focusable for CanvasPanel {
-    fn focus_handle(&self, cx: &App) -> FocusHandle {
-        self.canvas.focus_handle(cx)
-    }
-}
+        // ── Assemble: left | center | right ────────────────────
+        let layout = DockLayout::h_split()
+            .child(left, Some(px(200.)))
+            .child(center, None)
+            .child(right, Some(px(260.)));
 
-impl Render for CanvasPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().child(self.canvas.clone())
-    }
-}
+        dock_area.update(cx, |view, cx| {
+            view.set_center(layout, window, cx);
+        });
 
-/// A simple placeholder panel for dock layout testing.
-pub struct PlaceholderPanel {
-    focus_handle: FocusHandle,
-    title: String,
-    subtitle: String,
-}
-
-impl PlaceholderPanel {
-    pub fn new(title: &str, subtitle: &str, cx: &mut Context<Self>) -> Self {
         Self {
-            focus_handle: cx.focus_handle(),
-            title: title.to_string(),
-            subtitle: subtitle.to_string(),
+            dock_area,
+            _skin: skin,
         }
     }
 }
 
-impl BasePanel for PlaceholderPanel {
-    fn panel_name(&self) -> &'static str {
-        match self.title.as_str() {
-            "Tools" => "Tools",
-            "Properties" => "Properties",
-            "History" => "History",
-            "Canvas" => "Canvas",
-            _ => "Placeholder",
-        }
+impl Render for DockLayoutView {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.dock_area.clone().into_element()
     }
-}
-
-impl Panel for PlaceholderPanel {
-    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div() // Empty title
-    }
-}
-
-impl EventEmitter<PanelEvent> for PlaceholderPanel {}
-
-impl Focusable for PlaceholderPanel {
-    fn focus_handle(&self, _cx: &App) -> FocusHandle {
-        self.focus_handle.clone()
-    }
-}
-
-impl Render for PlaceholderPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
-            .track_focus(&self.focus_handle)
-            .child(
-                div()
-                    .text_xs()
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .child(self.title.clone()),
-            )
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().foreground.opacity(0.5))
-                    .child(self.subtitle.clone()),
-            )
-    }
-}
-
-/// Loads dock layout from file.
-fn load_layout(
-    dock_area: Entity<DockArea>,
-    window: &mut Window,
-    cx: &mut App,
-) -> anyhow::Result<()> {
-    let json = std::fs::read_to_string(STATE_FILE)?;
-    let state: DockAreaState = serde_json::from_str(&json)?;
-    dock_area.update(cx, |area, cx| {
-        area.load(state, window, cx)?;
-        Ok::<(), anyhow::Error>(())
-    })?;
-    Ok(())
-}
-
-/// Saves dock layout to file.
-pub fn save_layout(dock_area: &Entity<DockArea>, cx: &mut App) -> anyhow::Result<()> {
-    let state = dock_area.read(cx).dump(cx);
-    let json = serde_json::to_string_pretty(&state)?;
-    std::fs::write(STATE_FILE, json)?;
-    Ok(())
 }

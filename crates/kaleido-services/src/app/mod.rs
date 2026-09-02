@@ -4,7 +4,9 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use cordis::{Context, Inject, PluginHandle, Service, service_sync};
+use cordis::Context;
+
+use crate::{impl_service, service_plugin};
 use kaleido_traits::services::app::{AppService, AppSettings};
 use kaleido_traits::services::ui::UiService;
 use kaleido_traits::services::{ServiceError, ServiceResult};
@@ -90,9 +92,7 @@ impl AppServiceImpl {
     }
 }
 
-impl Service for AppServiceImpl {
-    const NAME: &'static str = "app_service";
-}
+impl_service!(AppServiceImpl, "app_service");
 
 impl AppService for AppServiceImpl {
     fn name(&self) -> String {
@@ -184,14 +184,10 @@ impl AppService for AppServiceImpl {
     }
 }
 
-/// Installs the `app_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<AppServiceImpl, (), _>(
-        "app_service",
-        Inject::none(),
-        |ctx, _config| Ok(AppServiceImpl::new(ctx)),
-    )
-}
+service_plugin!(AppServiceImpl, "app_service",
+    deps: none,
+    build: |ctx, _config| Ok(AppServiceImpl::new(ctx))
+);
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 

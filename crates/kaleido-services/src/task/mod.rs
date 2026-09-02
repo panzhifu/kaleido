@@ -47,7 +47,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::JoinHandle;
 
-use cordis::{Context, Inject, PluginHandle, Service, service_sync};
+
+use crate::{impl_service, service_plugin};
 use kaleido_traits::services::task::{TaskId, TaskService, TaskStatus};
 use kaleido_traits::services::{ServiceError, ServiceResult};
 
@@ -89,16 +90,13 @@ impl TaskEntry {
 
 /// Default implementation of [`TaskService`].
 pub struct TaskServiceImpl {
-    // Kept for future event emission, matching the other manager services.
-    ctx: Context,
     tasks: RwLock<HashMap<TaskId, TaskEntry>>,
     next_id: AtomicU64,
 }
 
 impl TaskServiceImpl {
-    pub fn new(ctx: Context) -> Self {
+    pub fn new() -> Self {
         Self {
-            ctx,
             tasks: RwLock::new(HashMap::new()),
             next_id: AtomicU64::new(1),
         }
@@ -176,9 +174,7 @@ fn prune_finished_entries(tasks: &mut HashMap<TaskId, TaskEntry>) -> usize {
     before - tasks.len()
 }
 
-impl Service for TaskServiceImpl {
-    const NAME: &'static str = "task_service";
-}
+impl_service!(TaskServiceImpl, "task_service");
 
 impl TaskService for TaskServiceImpl {
     fn spawn(
@@ -387,14 +383,10 @@ impl TaskService for TaskServiceImpl {
     }
 }
 
-/// Installs the `task_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<TaskServiceImpl, (), _>(
-        "task_service",
-        Inject::none(),
-        |ctx, _config| Ok(TaskServiceImpl::new(ctx)),
-    )
-}
+service_plugin!(TaskServiceImpl, "task_service",
+    deps: none,
+    build: |_ctx, _config| Ok(TaskServiceImpl::new())
+);
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -407,7 +399,7 @@ mod tests {
     use std::time::Duration;
 
     fn service() -> TaskServiceImpl {
-        TaskServiceImpl::new(Context::new())
+        TaskServiceImpl::new()
     }
 
     /// Spawns a task that signals `tx` once its body is running, then sleeps

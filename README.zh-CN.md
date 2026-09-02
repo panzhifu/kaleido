@@ -60,7 +60,18 @@ Kaleido 支持**五种编辑模式**——矢量、像素、绘画、排版、�
 
 ### 应用层
 - **`kaleido-cli`** — 演示 12 管理器架构，提供 `status` 和 `demo` 命令
-- **`kaleido-desktop`** — GPUI 宿主：画布渲染、Dock 系统、快捷键、文件打开/保存、撤销/重做
+- **`kaleido-desktop`** — GPUI 宿主：画布渲染、可调整 Dock 面板、快捷键、文件打开/保存、撤销/重做、缩放、图层管理
+
+### 桌面端 UI
+- **可调整 Dock 面板** — 基于 `DockArea` + `DockLayout`，支持拖动调整分割（左侧工具 | 中间画布 | 右侧图层/颜色）
+- **图层面板** — 添加/删除/选中图层，图层堆叠显示，高亮当前图层
+- **颜色面板** — 前景色色板、文档信息（尺寸、图层数）
+- **工具面板** — 工具按钮（移动工具），带激活状态
+- **状态栏** — 实时显示编辑模式、图层数、历史深度（撤销/重做）、缩放级别
+- **菜单栏** — 文件（打开/保存/另存为/退出）、编辑（撤销/重做）、视图（放大/缩小/适应窗口）、模式（像素/矢量/绘画/排版/动画）、帮助（关于）
+- **画布缩放** — 放大/缩小/适应窗口，实时预览
+- **16 种混合模式** — 正常、正片叠底、滤色、叠加、变暗、变亮、颜色减淡、颜色加深、强光、柔光、差值、排除、色相、饱和度、颜色、明度
+- **位图导出** — 通过编解码器保存为 PNG/JPEG/WebP/TIFF
 
 ### 插件体系
 - 示例插件：[`plugins/examples/tga`](plugins/examples/tga)（TGA 格式编解码）、[`plugins/wasm/simple_format`](plugins/wasm/simple_format)（WASM 插件）
@@ -180,7 +191,8 @@ crates/
   kaleido-sdk/         插件 SDK：ToolPlugin builder + define_tool! 宏
 apps/
   cli/                 CLI 演示 12 管理器架构
-  desktop/             GPUI 桌面宿主（画布、Dock、状态栏）
+  desktop/             GPUI 桌面宿主（画布、可调整 Dock、状态栏）
+  desktop/src/dock/    Dock 面板（工具面板、图层面板、颜色面板），使用库 DockArea
 plugins/
   examples/tga/        TGA 格式编解码插件
   wasm/simple_format/  WASM 插件示例（编译好的 .wasm + .wit）
@@ -202,10 +214,15 @@ tests/                集成测试夹具（占位）
 - [x] **TGA 编解码插件**示例
 - [x] **WASM simple_format 插件**示例
 - [x] **文档格式**（`.kld` 分块原生格式）
-- [x] **190 个测试**覆盖全工作区
+- [x] **197 个测试**覆盖全工作区
+- [x] **16 种混合模式**（正常、正片叠底、滤色、叠加、变暗、变亮、颜色减淡、颜色加深、强光、柔光、差值、排除、色相、饱和度、颜色、明度）
+- [x] **可调整 Dock 面板**，使用库 DockArea API
+- [x] **图层面板**，支持添加/删除/选中
+- [x] **位图导出**（PNG/JPEG/WebP/TIFF）
+- [x] **画布缩放**（放大/缩小/适应窗口）
+- [x] **WASM 插件**修复（正确的 bump allocator）
 
 ### 待做
-- [ ] 高级混合模式（Hard Light 等 SIMD 优化）
 - [ ] 蒙版系统增强（羽化、矢量蒙版）
 - [ ] 选区叠加渲染（marching ants 动画）
 - [ ] 笔刷引擎预设（纹理、动态、混合）

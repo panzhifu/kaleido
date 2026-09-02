@@ -61,6 +61,14 @@ pub trait DataService: Send + Sync + 'static {
     /// successful write.
     fn save_as(&self, path: &Path) -> ServiceResult<()>;
 
+    /// Renders the current document to a flat image for bitmap export.
+    ///
+    /// Composites the scene graph bottom-up into a single RGBA bitmap.
+    /// Used by [`save_as`](Self::save_as) when exporting to non-`.kld`
+    /// formats.  Returns an error when no document is open.
+    fn render_for_export(&self) -> ServiceResult<kaleido_core::TiledImage>;
+
+
     /// Closes the current document (no-op when none is open).
     fn close(&self) -> ServiceResult<()>;
 

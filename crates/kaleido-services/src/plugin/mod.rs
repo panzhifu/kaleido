@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 
-use cordis::{Context, Inject, PluginHandle, Service, service_sync};
+use cordis::Context;
+
+use crate::{impl_service, service_plugin};
 use kaleido_traits::data::codec::FileCodecRegistry;
 use kaleido_traits::plugins::events::{KaleidoEmitter, PluginInstalledEvent, PluginUninstalledEvent};
 use kaleido_traits::plugins::tool::Tool;
@@ -65,21 +67,15 @@ impl PluginServiceImpl {
 
 // ── Cordis integration ────────────────────────────────────────────────────
 
-impl Service for PluginServiceImpl {
-    const NAME: &'static str = "plugin_service";
-}
+impl_service!(PluginServiceImpl, "plugin_service");
 
-/// Installs the `plugin_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<PluginServiceImpl, (), _>(
-        "plugin_service",
-        Inject::none(),
-        |ctx, _config| {
-            let codec_registry = Arc::new(crate::data::format::FormatRegistry::with_built_in());
-            Ok(PluginServiceImpl::new(ctx, codec_registry))
-        },
-    )
-}
+service_plugin!(PluginServiceImpl, "plugin_service",
+    deps: none,
+    build: |ctx, _config| {
+        let codec_registry = Arc::new(crate::data::format::FormatRegistry::with_built_in());
+        Ok(PluginServiceImpl::new(ctx, codec_registry))
+    }
+);
 
 /// Resolves the [`PluginService`] trait object from a Cordis context.
 pub fn resolve_plugin_service(ctx: &Context) -> cordis::Result<Arc<dyn PluginService>> {

@@ -15,7 +15,6 @@ mod canvas;
 mod dock;
 mod menu;
 mod status_bar;
-mod toolbar;
 
 use app::{GlobalKaleidoApp, KaleidoEditor, OpenFile, Redo, Save, SaveAs, Undo};
 

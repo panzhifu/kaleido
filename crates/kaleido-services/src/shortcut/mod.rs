@@ -130,20 +130,15 @@ impl ShortcutService for ShortcutServiceImpl {
 
 // ── Cordis integration ────────────────────────────────────────────────────
 
-use cordis::{Inject, PluginHandle, Service, service_sync};
 
-impl Service for ShortcutServiceImpl {
-    const NAME: &'static str = "shortcut_service";
-}
+use crate::{impl_service, service_plugin};
 
-/// Installs the `shortcut_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<ShortcutServiceImpl, (), _>(
-        "shortcut_service",
-        Inject::none(),
-        |_ctx, _config| Ok(ShortcutServiceImpl::new()),
-    )
-}
+impl_service!(ShortcutServiceImpl, "shortcut_service");
+
+service_plugin!(ShortcutServiceImpl, "shortcut_service",
+    deps: none,
+    build: |_ctx, _config| Ok(ShortcutServiceImpl::new())
+);
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 

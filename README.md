@@ -62,7 +62,18 @@ This crate contains **only data structures** — no service logic, no plugin fra
 
 ### Applications
 - **`kaleido-cli`** — demonstrates the 12-manager architecture with `status` and `demo` commands
-- **`kaleido-desktop`** — GPUI host with canvas rendering, dock system, keyboard shortcuts, file open/save, undo/redo
+- **`kaleido-desktop`** — GPUI host with canvas rendering, resizable dock panels, keyboard shortcuts, file open/save, undo/redo, zoom, layer management
+
+### Desktop UI
+- **Resizable dock panels** — library-powered `DockArea` + `DockLayout` with drag-to-resize splits (left tools | center canvas | right layers/color)
+- **Layers panel** — add/remove/select layers, visual layer stack with active highlighting
+- **Color panel** — foreground color swatch, document info (dimensions, layer count)
+- **Tool panel** — tool buttons (move tool) with active state
+- **Status bar** — live display of editing mode, layer count, history depth (undo/redo), zoom level
+- **Menu bar** — File (open/save/save as/exit), Edit (undo/redo), View (zoom in/out/fit), Mode (pixel/vector/paint/type/animation), Help (about)
+- **Canvas zoom** — zoom in/out/fit-to-window with real-time preview
+- **16 blend modes** — Normal, Multiply, Screen, Overlay, Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion, Hue, Saturation, Color, Luminosity
+- **Bitmap export** — save to PNG/JPEG/WebP/TIFF via codec registry
 
 ### Plugin system
 - Example plugins: [`plugins/examples/tga`](plugins/examples/tga) (TGA format codec), [`plugins/wasm/simple_format`](plugins/wasm/simple_format) (WASM plugin)
@@ -183,7 +194,8 @@ crates/
   kaleido-sdk/          Plugin SDK: ToolPlugin builder + define_tool! macro
 apps/
   cli/                  CLI demo of 12-manager architecture
-  desktop/              GPUI desktop host (canvas, dock, status bar)
+  desktop/              GPUI desktop host (canvas, resizable dock, layers, status bar)
+  desktop/src/dock/     Dock panels (tool panel, layers panel, color panel) using library DockArea
 plugins/
   examples/tga/         TGA format codec plugin
   wasm/simple_format/   WASM plugin example (compiled .wasm + .wit)
@@ -205,10 +217,15 @@ tests/                  Integration test fixtures (placeholder)
 - [x] **TGA codec plugin** example
 - [x] **WASM simple_format plugin** example
 - [x] **Document format** (`.kld` chunk-based native format)
-- [x] **190 tests** across workspace
+- [x] **197 tests** across workspace
+- [x] **16 blend modes** (Normal, Multiply, Screen, Overlay, Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion, Hue, Saturation, Color, Luminosity)
+- [x] **Resizable dock panels** with visible drag handles
+- [x] **Layers panel** with add/remove/select
+- [x] **Bitmap export** (PNG/JPEG/WebP/TIFF)
+- [x] **Canvas zoom** (zoom in/out/fit)
+- [x] **WASM plugin** fixed (proper bump allocator)
 
 ### TODO
-- [ ] Advanced blend modes (Hard Light SIMD optimization)
 - [ ] Mask system enhancements (feathering, vector masks)
 - [ ] Selection overlay rendering (marching ants animation)
 - [ ] Brush engine presets (texture, dynamics, blending)

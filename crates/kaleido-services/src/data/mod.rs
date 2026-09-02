@@ -7,8 +7,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
-use cordis::{Context, Inject, PluginHandle, Service, service_sync};
-use kaleido_core::{Document, DocumentId, ImageSize, NodeContent, PixelLayer};
+use cordis::Context;
+use kaleido_core::{Document, DocumentId, ImageSize, NodeContent, Pixel, PixelLayer, TiledImage};
+
+use crate::{impl_service, service_plugin};
 
 pub mod format;
 
@@ -56,21 +58,15 @@ fn lock_err<T>(_: std::sync::PoisonError<T>) -> ServiceError {
 
 // ── Cordis integration ────────────────────────────────────────────────────
 
-impl Service for DataServiceImpl {
-    const NAME: &'static str = "data_service";
-}
+impl_service!(DataServiceImpl, "data_service");
 
-/// Installs the `data_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<DataServiceImpl, (), _>(
-        "data_service",
-        Inject::none(),
-        |ctx, _config| {
-            let registry = Arc::new(crate::data::format::FormatRegistry::with_built_in());
-            Ok(DataServiceImpl::new(ctx, registry))
-        },
-    )
-}
+service_plugin!(DataServiceImpl, "data_service",
+    deps: none,
+    build: |ctx, _config| {
+        let registry = Arc::new(crate::data::format::FormatRegistry::with_built_in());
+        Ok(DataServiceImpl::new(ctx, registry))
+    }
+);
 
 // ── DataService trait implementation ──────────────────────────────────────
 
@@ -158,10 +154,9 @@ impl DataService for DataServiceImpl {
             let bytes = doc.to_kld()?;
             std::fs::write(path, bytes)?;
         } else {
-            // Bitmap formats — requires compositing (delegated to RenderService)
-            return Err(ServiceError::Other(
-                "bitmap export requires RenderService (not yet implemented)".into(),
-            ));
+            // Bitmap formats — composite the document and save via codec registry.
+            let image = self.render_for_export()?;
+            self.codec_registry.save(path, &image)?;
         }
 
         let format = if ext == "kld" { "kld" } else { ext.as_str() };
@@ -171,6 +166,26 @@ impl DataService for DataServiceImpl {
             format: format.to_string(),
         });
         Ok(())
+    }
+
+    /// Renders the current document to a flat TiledImage for export.
+    fn render_for_export(&self) -> ServiceResult<kaleido_core::TiledImage> {
+        let doc = self.current_doc()?;
+        let size = doc.size;
+        let mut canvas = kaleido_core::TiledImage::new(
+            size.width,
+            size.height,
+            kaleido_core::PixelFormat::Rgba8,
+        );
+        canvas.fill_entire(kaleido_core::Pixel::new(0, 0, 0, 0));
+
+        // Composite children of the root node in paint order.
+        let root = doc.scene.root();
+        let children = doc.scene.children(root).cloned().unwrap_or_default();
+        for child_id in &children {
+            composite_export_node(&mut canvas, &doc.scene, *child_id, 1.0, true);
+        }
+        Ok(canvas)
     }
 
     fn close(&self) -> ServiceResult<()> {
@@ -226,6 +241,19 @@ impl DataService for DataServiceImpl {
             }
         }
     }
+}
+
+// ── Export compositing ───────────────────────────────────────────────────
+
+/// Recursively composites a node subtree into `canvas` for export.
+fn composite_export_node(
+    canvas: &mut TiledImage,
+    scene: &kaleido_core::Scene,
+    id: kaleido_core::NodeId,
+    inherited_opacity: f32,
+    inherited_visible: bool,
+) {
+    crate::render::composite_node(canvas, scene, id, inherited_opacity, inherited_visible);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -387,5 +415,40 @@ mod tests {
         assert!(svc.has_document());
         assert_eq!(svc.size().unwrap().width, 800);
         assert_eq!(svc.size().unwrap().height, 600);
+    }
+
+    #[test]
+    fn test_bitmap_export_with_pixel_layer() {
+        use kaleido_core::{NodeContent, Pixel, PixelLayer, TiledImage};
+
+        let path = tmp("export_with_layer.png");
+        let svc = make_service();
+
+        // Create a document.
+        svc.new_document("export_test", 4, 4).unwrap();
+
+        // Add a pixel layer with known content.
+        {
+            let mut doc = svc.document().unwrap().unwrap();
+            let image = TiledImage::with_color(4, 4, kaleido_core::PixelFormat::Rgba8, Pixel::rgb(255, 0, 0)).unwrap();
+            let layer = PixelLayer::new(image);
+            let root = doc.root();
+            doc.scene.add_node(root, "Red", NodeContent::Pixel(layer));
+            svc.restore(doc);
+        }
+
+        // Export to PNG.
+        let result = svc.save_as(&path);
+        assert!(result.is_ok(), "bitmap export should succeed: {:?}", result.err());
+
+        // Verify the file was created.
+        assert!(path.exists(), "exported PNG should exist");
+
+        // Read it back and verify dimensions.
+        let img = image::open(&path).unwrap();
+        assert_eq!(img.width(), 4);
+        assert_eq!(img.height(), 4);
+
+        let _ = std::fs::remove_file(&path);
     }
 }

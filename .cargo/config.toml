@@ -1,0 +1,4 @@
+# WASM plugin needs panic = "abort" because #![no_std] doesn't support unwinding.
+# This only affects the wasm32-unknown-unknown target builds.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "panic=abort"]

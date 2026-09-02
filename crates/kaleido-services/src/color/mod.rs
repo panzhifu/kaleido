@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use cordis::{Context, Inject, PluginHandle, Service, service_sync};
+use crate::{impl_service, service_plugin};
 use kaleido_core::{Color, ColorProfile};
 use kaleido_traits::color::ColorService;
 use kaleido_traits::data::error::{ServiceError, ServiceResult};
@@ -12,44 +12,36 @@ use kaleido_traits::data::DataService;
 
 /// Default implementation of [`ColorService`].
 pub struct ColorServiceImpl {
-    ctx: Context,
     data_service: Arc<dyn DataService>,
     /// Swatch palette (document-level swatches could also go through DataService).
     swatches: RwLock<Vec<Color>>,
 }
 
 impl ColorServiceImpl {
-    pub fn new(ctx: Context, data_service: Arc<dyn DataService>) -> Self {
+    pub fn new(data_service: Arc<dyn DataService>) -> Self {
         Self {
-            ctx,
             data_service,
             swatches: RwLock::new(Vec::new()),
         }
     }
 }
 
-impl Service for ColorServiceImpl {
-    const NAME: &'static str = "color_service";
-}
+impl_service!(ColorServiceImpl, "color_service");
 
-/// Installs the `color_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<ColorServiceImpl, (), _>(
-        "color_service",
-        Inject::none(),
-        |ctx, _config| {
-            let data_service: Arc<dyn DataService> = ctx
-                .get::<crate::data::DataServiceImpl>("data_service")?
-                .ok_or_else(|| -> cordis::CordisError {
-                    cordis::CordisError::with_message(
-                        cordis::ErrorCode::Other,
-                        String::from("data_service not found"),
-                    )
-                })?;
-            Ok(ColorServiceImpl::new(ctx, data_service))
-        },
-    )
-}
+service_plugin!(ColorServiceImpl, "color_service",
+    deps: none,
+    build: |ctx, _config| {
+        let data_service: Arc<dyn DataService> = ctx
+            .get::<crate::data::DataServiceImpl>("data_service")?
+            .ok_or_else(|| -> cordis::CordisError {
+                cordis::CordisError::with_message(
+                    cordis::ErrorCode::Other,
+                    String::from("data_service not found"),
+                )
+            })?;
+        Ok(ColorServiceImpl::new(data_service))
+    }
+);
 
 // ── ColorService trait implementation ──────────────────────────────────────
 
@@ -176,12 +168,15 @@ mod tests {
         fn restore(&self, snapshot: kaleido_core::Document) {
             *self.doc.write().unwrap_or_else(|e| e.into_inner()) = Some(snapshot);
         }
+        fn render_for_export(&self) -> ServiceResult<kaleido_core::TiledImage> {
+            Err(ServiceError::Other("not implemented".into()))
+        }
     }
 
     fn make_service() -> ColorServiceImpl {
         let doc = kaleido_core::Document::new(DocumentId(1), "test", 64, 32).unwrap();
         let fake = Arc::new(FakeDataService::new(doc));
-        ColorServiceImpl::new(Context::new(), fake)
+        ColorServiceImpl::new(fake)
     }
 
     #[test]

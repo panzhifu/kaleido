@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use gpui::*;
-use gpui_component::{ActiveTheme as _, TitleBar, v_flex};
+use gpui_component::{ActiveTheme as _, TitleBar, v_flex, dock::PanelEvent};
 
 use kaleido_services::app::{AppConfig, KaleidoApp};
 
@@ -37,25 +37,26 @@ actions!(
 );
 
 use crate::canvas::Canvas;
-use crate::dock::{create_dock_area, save_layout};
-use crate::menu::{MenuBar, MenuKind, MenuToggleAction};
+use crate::dock::{DockLayoutView, ActiveTool};
+use crate::menu::{MenuBar, MenuItemAction};
 use crate::status_bar::StatusBar;
 
 /// The main Kaleido editor.
 pub struct KaleidoEditor {
     focus_handle: FocusHandle,
     menu_bar: Entity<MenuBar>,
-    dock_area: Entity<gpui_component::dock::DockArea>,
+    active_tool: Entity<ActiveTool>,
+    dock_area: Entity<DockLayoutView>,
     canvas: Entity<Canvas>,
     status_bar: Entity<StatusBar>,
 }
 
 impl KaleidoEditor {
-    /// Called after a document is loaded. Emits DocumentChanged on the canvas.
+    /// Called after a document is loaded. Emits LayoutChanged on the canvas.
     fn on_document_loaded(&mut self, cx: &mut Context<Self>) {
         self.canvas.update(cx, |canvas, cx| {
             canvas.refresh();
-            cx.emit(crate::canvas::CanvasEvent::DocumentChanged);
+            cx.emit(crate::canvas::PanelEvent::LayoutChanged);
             cx.notify();
         });
     }
@@ -66,8 +67,10 @@ impl KaleidoEditor {
         let focus_handle = cx.focus_handle();
 
         let app = cx.global::<GlobalKaleidoApp>().clone();
-        let canvas = cx.new(|cx| Canvas::new(app, cx));
-        let menu_bar = cx.new(|cx| MenuBar::new(cx));
+        let active_tool = cx.new(|cx| ActiveTool::new(cx));
+        let app_for_canvas = app.clone();
+        let canvas = cx.new(|cx| Canvas::new(app_for_canvas, active_tool.clone(), cx));
+        let menu_bar = cx.new(|cx| MenuBar::new(canvas.clone(), cx));
 
         // Load initial file if provided via command line.
         if let Some(path) = initial_path {
@@ -80,7 +83,7 @@ impl KaleidoEditor {
                     // Refresh canvas after loading.
                     canvas.update(cx, |canvas, cx| {
                         canvas.refresh();
-                        cx.emit(crate::canvas::CanvasEvent::DocumentChanged);
+                        cx.emit(crate::canvas::PanelEvent::LayoutChanged);
                         cx.notify();
                     });
                 }
@@ -90,20 +93,19 @@ impl KaleidoEditor {
         // Canvas handles its own re-render via cx.notify() after refresh().
         // No need for KaleidoEditor to propagate the event.
 
-        let (dock_area, _dock_skin) = create_dock_area(canvas.clone(), window, cx);
+        let dock_area = cx.new(|cx| DockLayoutView::new(app.clone(), canvas.clone(), active_tool.clone(), window, cx));
 
         // Note: Layout persistence disabled to avoid window-not-found errors.
         // The dock layout is ephemeral per session.
 
         let status_bar = cx.new(|_cx| {
-            StatusBar::new()
-                .add_left_item("就绪")
-                .add_right_item("100%")
+            StatusBar::new(app.clone(), canvas.clone())
         });
 
         Self {
             focus_handle,
             menu_bar,
+            active_tool,
             dock_area,
             canvas,
             status_bar,
@@ -117,6 +119,7 @@ impl KaleidoEditor {
                     tracing::warn!("undo failed: {e}");
                 } else {
                     self.on_document_loaded(cx);
+                    cx.notify();
                 }
             }
         }
@@ -129,96 +132,164 @@ impl KaleidoEditor {
                     tracing::warn!("redo failed: {e}");
                 } else {
                     self.on_document_loaded(cx);
+                    cx.notify();
                 }
             }
         }
     }
 
-    fn on_open_file(&mut self, _: &OpenFile, window: &mut Window, cx: &mut Context<Self>) {
-        let options = PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: false,
-            prompt: Some("打开图片".into()),
-        };
-        let receiver = cx.prompt_for_paths(options);
+    fn on_open_file(&mut self, _: &OpenFile, _window: &mut Window, cx: &mut Context<Self>) {
+        tracing::info!("[OPEN] === on_open_file triggered ===");
+        // Defer the prompt so the menu popup fully dismisses first —
+        // otherwise GPUI reports "window not found" while the popup
+        // is still active.
         let this = cx.weak_entity();
-        // Capture the global app reference before entering async context.
-        let app = cx.try_global::<GlobalKaleidoApp>().cloned();
-        cx.spawn(async move |this, cx| {
-            let paths = match receiver.await {
-                Ok(Ok(Some(paths))) => paths,
-                _ => return,
+        tracing::info!("[OPEN] entity_id = {:?}, about to call cx.defer", this.entity_id());
+        cx.defer(move |cx| {
+            tracing::info!("[OPEN] === defer closure running ===");
+            let options = PathPromptOptions {
+                files: true,
+                directories: false,
+                multiple: false,
+                prompt: Some("打开图片".into()),
             };
-            let Some(path) = paths.into_iter().next() else { return };
-            tracing::info!("open: {path:?}");
+            tracing::info!("[OPEN] calling prompt_for_paths...");
+            let receiver = cx.prompt_for_paths(options);
+            tracing::info!("[OPEN] prompt_for_paths returned, spawning await...");
+            let this = this.clone();
+            // Capture the global app reference before entering async context.
+            let app = cx.global::<GlobalKaleidoApp>().clone();
+            cx.spawn(async move |cx| {
+                tracing::info!("[OPEN] spawned task: awaiting paths...");
+                let paths = match receiver.await {
+                    Ok(Ok(Some(paths))) => paths,
+                    other => {
+                        tracing::error!("[OPEN] prompt_for_paths receiver returned: {:?}", other);
+                        return;
+                    }
+                };
+                let Some(path) = paths.into_iter().next() else {
+                    tracing::warn!("[OPEN] no path selected");
+                    return;
+                };
+                tracing::info!("[OPEN] selected path: {path:?}");
 
-            let Some(app) = app else {
-                tracing::warn!("KaleidoApp global not available");
-                return;
-            };
+                // Load the file into the document service.
+                match app.data_service().open(std::path::Path::new(&path)) {
+                    Ok(()) => {
+                        tracing::info!("[OPEN] document loaded: {path:?}");
+                        // Notify the UI to refresh.
+                        let _ = this.update(cx, |this, cx| {
+                            this.on_document_loaded(cx);
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("[OPEN] failed to open file: {e}");
+                    }
+                }
+            })
+            .detach();
+        });
+        tracing::info!("[OPEN] cx.defer call returned");
+    }
 
-            // Load the file into the document service.
-            match app.data_service().open(std::path::Path::new(&path)) {
-                Ok(()) => {
-                    tracing::info!("document loaded: {path:?}");
-                    // Notify the UI to refresh.
-                    let _ = this.update(cx, |this, cx| {
-                        this.on_document_loaded(cx);
-                    });
-                }
-                Err(e) => {
-                    tracing::error!("failed to open file: {e}");
-                }
+    fn on_save(&mut self, _: &Save, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(app) = cx.try_global::<GlobalKaleidoApp>() {
+            if let Err(e) = app.data_service().save() {
+                tracing::warn!("save failed: {e}");
             }
-        })
-        .detach();
-    }
-
-    fn on_save(&mut self, _: &Save, window: &mut Window, cx: &mut Context<Self>) {
+        }
         cx.notify();
     }
 
-    fn on_save_as(&mut self, _: &SaveAs, window: &mut Window, cx: &mut Context<Self>) {
-        cx.notify();
+    fn on_save_as(&mut self, _: &SaveAs, _window: &mut Window, cx: &mut Context<Self>) {
+        tracing::info!("[SAVE_AS] === on_save_as triggered ===");
+        // Defer the prompt so the menu popup fully dismisses first.
+        let this = cx.weak_entity();
+        tracing::info!("[SAVE_AS] entity_id = {:?}, about to call cx.defer", this.entity_id());
+        cx.defer(move |cx| {
+            tracing::info!("[SAVE_AS] === defer closure running ===");
+            let options = PathPromptOptions {
+                files: true,
+                directories: false,
+                multiple: false,
+                prompt: Some("另存为".into()),
+            };
+            tracing::info!("[SAVE_AS] calling prompt_for_paths...");
+            let receiver = cx.prompt_for_paths(options);
+            tracing::info!("[SAVE_AS] prompt_for_paths returned, spawning await...");
+            let this = this.clone();
+            let app = cx.global::<GlobalKaleidoApp>().clone();
+            cx.spawn(async move |cx| {
+                tracing::info!("[SAVE_AS] spawned task: awaiting paths...");
+                let paths = match receiver.await {
+                    Ok(Ok(Some(paths))) => paths,
+                    other => {
+                        tracing::error!("[SAVE_AS] prompt_for_paths receiver returned: {:?}", other);
+                        return;
+                    }
+                };
+                let Some(path) = paths.into_iter().next() else {
+                    tracing::warn!("[SAVE_AS] no path selected");
+                    return;
+                };
+                tracing::info!("[SAVE_AS] selected path: {path:?}");
+                if let Err(e) = app.data_service().save_as(std::path::Path::new(&path)) {
+                    tracing::warn!("[SAVE_AS] save_as failed: {e}");
+                } else {
+                    tracing::info!("[SAVE_AS] saved to: {path:?}");
+                }
+                let _ = this.update(cx, |this, cx| {
+                    this.on_document_loaded(cx);
+                });
+            })
+            .detach();
+        });
+        tracing::info!("[SAVE_AS] cx.defer call returned");
     }
 
-    fn on_menu_toggle(&mut self, action: &MenuToggleAction, _window: &mut Window, cx: &mut Context<Self>) {
-        tracing::info!("on_menu_toggle received: {:?}", action.0);
-        self.menu_bar.update(cx, |menu_bar, cx| {
-            menu_bar.toggle_menu(action.0, cx);
-        });
-    }
-
-    fn on_menu_item(&mut self, action: &crate::menu::MenuItemAction, _window: &mut Window, cx: &mut Context<Self>) {
-        // Close the menu.
-        self.menu_bar.update(cx, |menu_bar, cx| {
-            menu_bar.toggle_menu(menu_bar.open_menu.unwrap_or(crate::menu::MenuKind::File), cx);
-        });
-
-        // Handle the action.
+    fn on_menu_item(&mut self, action: &MenuItemAction, _window: &mut Window, cx: &mut Context<Self>) {
+        tracing::info!("[MENU] on_menu_item called: action={}", action.0);
+        // File operations need deferred path prompts.
+        // Dispatch must be deferred until the menu popup fully dismisses,
+        // otherwise GPUI reports "window not found" while the popup is active.
         match action.0.as_str() {
             "menu-open" => {
-                let _ = &action.0; // Use action to avoid warning
+                tracing::info!("[MENU] deferring OpenFile dispatch");
+                cx.defer(move |cx| {
+                    tracing::info!("[MENU] deferred: dispatching OpenFile");
+                    cx.dispatch_action(&OpenFile);
+                });
+                return;
             }
-            "menu-save" => {}
-            "menu-save-as" => {}
-            "menu-exit" => {}
-            "menu-undo" => {}
-            "menu-redo" => {}
-            "menu-zoom-in" => {}
-            "menu-zoom-out" => {}
-            "menu-fit" => {}
-            "menu-mode-pixel" | "menu-mode-vector" | "menu-mode-paint" | "menu-mode-type" | "menu-mode-animation" => {}
-            "menu-about" => {}
+            "menu-save" => {
+                tracing::info!("[MENU] deferring Save dispatch");
+                cx.defer(move |cx| {
+                    tracing::info!("[MENU] deferred: dispatching Save");
+                    cx.dispatch_action(&Save);
+                });
+                return;
+            }
+            "menu-save-as" => {
+                tracing::info!("[MENU] deferring SaveAs dispatch");
+                cx.defer(move |cx| {
+                    tracing::info!("[MENU] deferred: dispatching SaveAs");
+                    cx.dispatch_action(&SaveAs);
+                });
+                return;
+            }
             _ => {}
         }
+        // Everything else is handled in the menu module.
+        tracing::info!("[MENU] delegating to handle_menu_action: {}", action.0);
+        crate::menu::handle_menu_action(&action.0, &self.canvas.downgrade(), cx);
     }
 }
 
 impl Render for KaleidoEditor {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Put the menu bar inside the TitleBar.
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Title bar with menu bar only — opening files is done via
+        // 文件 → 打开 (File → Open) in the menu.
         let title_bar = TitleBar::new().child(self.menu_bar.clone());
 
         v_flex()
@@ -231,7 +302,6 @@ impl Render for KaleidoEditor {
             .on_action(cx.listener(Self::on_open_file))
             .on_action(cx.listener(Self::on_save))
             .on_action(cx.listener(Self::on_save_as))
-            .on_action(cx.listener(Self::on_menu_toggle))
             .on_action(cx.listener(Self::on_menu_item))
             .child(title_bar)
             .child(

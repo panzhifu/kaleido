@@ -15,7 +15,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 
-use cordis::{Context, Inject, PluginHandle, Service, service_sync};
+
+use crate::{impl_service, service_plugin};
 use kaleido_core::ResourceId;
 use kaleido_traits::services::resource::{ResourceData, ResourceKind, ResourceService};
 use kaleido_traits::services::{ServiceError, ServiceResult};
@@ -31,25 +32,20 @@ fn recover<T>(poisoned: std::sync::PoisonError<T>) -> T {
 
 /// Default implementation of [`ResourceService`].
 pub struct ResourceServiceImpl {
-    // Kept for future event emission, matching the other manager services.
-    ctx: Context,
     store: RwLock<HashMap<ResourceId, ResourceData>>,
     next_id: AtomicU64,
 }
 
 impl ResourceServiceImpl {
-    pub fn new(ctx: Context) -> Self {
+    pub fn new() -> Self {
         Self {
-            ctx,
             store: RwLock::new(HashMap::new()),
             next_id: AtomicU64::new(1),
         }
     }
 }
 
-impl Service for ResourceServiceImpl {
-    const NAME: &'static str = "resource_service";
-}
+impl_service!(ResourceServiceImpl, "resource_service");
 
 impl ResourceService for ResourceServiceImpl {
     fn register(&self, data: ResourceData) -> ServiceResult<ResourceId> {
@@ -102,13 +98,10 @@ impl ResourceService for ResourceServiceImpl {
 }
 
 /// Installs the `resource_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<ResourceServiceImpl, (), _>(
-        "resource_service",
-        Inject::none(),
-        |ctx, _config| Ok(ResourceServiceImpl::new(ctx)),
-    )
-}
+service_plugin!(ResourceServiceImpl, "resource_service",
+    deps: none,
+    build: |_ctx, _config| Ok(ResourceServiceImpl::new())
+);
 
 #[cfg(test)]
 mod tests {
@@ -117,7 +110,7 @@ mod tests {
     use std::sync::Arc;
 
     fn service() -> ResourceServiceImpl {
-        ResourceServiceImpl::new(Context::new())
+        ResourceServiceImpl::new()
     }
 
     fn font() -> ResourceData {
@@ -333,8 +326,8 @@ mod tests {
 
     #[test]
     fn plugin_installs_service() {
-        let ctx = Context::new();
-        ctx.plugin(plugin(), ());
+        let ctx = ::cordis::Context::new();
+        ctx.plugin(crate::resource::plugin(), ());
         let svc: Arc<dyn ResourceService> = ctx.require::<ResourceServiceImpl>("resource_service").unwrap();
         let id = svc.register(font()).unwrap();
         assert_eq!(svc.count(), 1);

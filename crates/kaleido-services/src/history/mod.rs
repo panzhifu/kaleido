@@ -7,7 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cordis::{Context, Inject, PluginHandle, Service, service_sync};
+
+use crate::{impl_service, service_plugin};
 use kaleido_core::Document;
 use kaleido_traits::data::error::{ServiceError, ServiceResult};
 use kaleido_traits::data::DataService;
@@ -28,7 +29,6 @@ fn now_secs() -> i64 {
 
 /// Default implementation of [`HistoryService`].
 pub struct HistoryServiceImpl {
-    ctx: Context,
     data_service: Arc<dyn DataService>,
     /// Undo stack — COW snapshots of state *before* each mutation.
     undo: RwLock<Vec<(Document, HistoryEntry)>>,
@@ -39,9 +39,8 @@ pub struct HistoryServiceImpl {
 }
 
 impl HistoryServiceImpl {
-    pub fn new(ctx: Context, data_service: Arc<dyn DataService>) -> Self {
+    pub fn new(data_service: Arc<dyn DataService>) -> Self {
         Self {
-            ctx,
             data_service,
             undo: RwLock::new(Vec::new()),
             redo: RwLock::new(Vec::new()),
@@ -79,28 +78,22 @@ impl HistoryServiceImpl {
     }
 }
 
-impl Service for HistoryServiceImpl {
-    const NAME: &'static str = "history_service";
-}
+impl_service!(HistoryServiceImpl, "history_service");
 
-/// Installs the `history_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<HistoryServiceImpl, (), _>(
-        "history_service",
-        Inject::none(),
-        |ctx, _config| {
-            let data_service: Arc<dyn DataService> = ctx
-                .get::<crate::data::DataServiceImpl>("data_service")?
-                .ok_or_else(|| -> cordis::CordisError {
-                    cordis::CordisError::with_message(
-                        cordis::ErrorCode::Other,
-                        String::from("data_service not found"),
-                    )
-                })?;
-            Ok(HistoryServiceImpl::new(ctx, data_service))
-        },
-    )
-}
+service_plugin!(HistoryServiceImpl, "history_service",
+    deps: none,
+    build: |ctx, _config| {
+        let data_service: Arc<dyn DataService> = ctx
+            .get::<crate::data::DataServiceImpl>("data_service")?
+            .ok_or_else(|| -> cordis::CordisError {
+                cordis::CordisError::with_message(
+                    cordis::ErrorCode::Other,
+                    String::from("data_service not found"),
+                )
+            })?;
+        Ok(HistoryServiceImpl::new(data_service))
+    }
+);
 
 // ── HistoryService trait implementation ───────────────────────────────────
 
@@ -271,12 +264,15 @@ mod tests {
                 }
             }
         }
+        fn render_for_export(&self) -> ServiceResult<kaleido_core::TiledImage> {
+            Err(ServiceError::Other("not implemented".into()))
+        }
     }
 
     fn make_service() -> (HistoryServiceImpl, Arc<FakeDataService>) {
         let doc = make_doc("test");
         let fake = Arc::new(FakeDataService::new(doc));
-        let svc = HistoryServiceImpl::new(Context::new(), fake.clone());
+        let svc = HistoryServiceImpl::new(fake.clone());
         (svc, fake)
     }
 

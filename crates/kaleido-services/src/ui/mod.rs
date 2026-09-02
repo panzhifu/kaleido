@@ -7,7 +7,9 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 
-use cordis::{Context, Inject, PluginHandle, Service, service_sync};
+use cordis::Context;
+
+use crate::{impl_service, service_plugin};
 use kaleido_traits::plugins::panel::{Panel, PanelRegistry};
 use kaleido_traits::services::ui::{UiService, MAX_NOTIFICATIONS};
 use kaleido_traits::services::ServiceResult;
@@ -60,9 +62,7 @@ impl UiServiceImpl {
     }
 }
 
-impl Service for UiServiceImpl {
-    const NAME: &'static str = "ui_service";
-}
+impl_service!(UiServiceImpl, "ui_service");
 
 impl UiService for UiServiceImpl {
     fn notify(&self, message: &str) {
@@ -98,17 +98,13 @@ impl UiService for UiServiceImpl {
     }
 }
 
-/// Installs the `ui_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<UiServiceImpl, (), _>(
-        "ui_service",
-        Inject::new(["panel_registry"]),
-        |ctx, _config| {
-            let panels = crate::services::ui::panel_registry::resolve_panel_registry(&ctx)?;
-            Ok(UiServiceImpl::new(ctx, panels))
-        },
-    )
-}
+service_plugin!(UiServiceImpl, "ui_service",
+    deps: ["panel_registry"],
+    build: |ctx, _config| {
+        let panels = crate::services::ui::panel_registry::resolve_panel_registry(&ctx)?;
+        Ok(UiServiceImpl::new(ctx, panels))
+    }
+);
 
 #[cfg(test)]
 mod tests {

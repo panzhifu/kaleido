@@ -5,7 +5,8 @@
 
 use std::sync::Arc;
 
-use cordis::{Context, Inject, PluginHandle, Service, service_sync};
+
+use crate::{impl_service, service_plugin};
 use kaleido_core::SelectionMask;
 use kaleido_traits::data::error::{ServiceError, ServiceResult};
 use kaleido_traits::data::DataService;
@@ -15,38 +16,31 @@ use kaleido_traits::selection::SelectionService;
 
 /// Default implementation of [`SelectionService`].
 pub struct SelectionServiceImpl {
-    ctx: Context,
     data_service: Arc<dyn DataService>,
 }
 
 impl SelectionServiceImpl {
-    pub fn new(ctx: Context, data_service: Arc<dyn DataService>) -> Self {
-        Self { ctx, data_service }
+    pub fn new(data_service: Arc<dyn DataService>) -> Self {
+        Self { data_service }
     }
 }
 
-impl Service for SelectionServiceImpl {
-    const NAME: &'static str = "selection_service";
-}
+impl_service!(SelectionServiceImpl, "selection_service");
 
-/// Installs the `selection_service` Cordis service.
-pub fn plugin() -> PluginHandle {
-    service_sync::<SelectionServiceImpl, (), _>(
-        "selection_service",
-        Inject::none(),
-        |ctx, _config| {
-            let data_service: Arc<dyn DataService> = ctx
-                .get::<crate::data::DataServiceImpl>("data_service")?
-                .ok_or_else(|| -> cordis::CordisError {
-                    cordis::CordisError::with_message(
-                        cordis::ErrorCode::Other,
-                        String::from("data_service not found"),
-                    )
-                })?;
-            Ok(SelectionServiceImpl::new(ctx, data_service))
-        },
-    )
-}
+service_plugin!(SelectionServiceImpl, "selection_service",
+    deps: none,
+    build: |ctx, _config| {
+        let data_service: Arc<dyn DataService> = ctx
+            .get::<crate::data::DataServiceImpl>("data_service")?
+            .ok_or_else(|| -> cordis::CordisError {
+                cordis::CordisError::with_message(
+                    cordis::ErrorCode::Other,
+                    String::from("data_service not found"),
+                )
+            })?;
+        Ok(SelectionServiceImpl::new(data_service))
+    }
+);
 
 // ── SelectionService trait implementation ──────────────────────────────────
 
@@ -224,12 +218,15 @@ mod tests {
         fn restore(&self, snapshot: kaleido_core::Document) {
             *self.doc.write().unwrap_or_else(|e| e.into_inner()) = Some(snapshot);
         }
+        fn render_for_export(&self) -> ServiceResult<kaleido_core::TiledImage> {
+            Err(ServiceError::Other("not implemented".into()))
+        }
     }
 
     fn make_service() -> SelectionServiceImpl {
         let doc = kaleido_core::Document::new(DocumentId(1), "test", 64, 32).unwrap();
         let fake = Arc::new(FakeDataService::new(doc));
-        SelectionServiceImpl::new(Context::new(), fake)
+        SelectionServiceImpl::new(fake)
     }
 
     #[test]
@@ -283,7 +280,7 @@ mod tests {
         let fake = Arc::new(FakeDataService::new(doc));
         *fake.doc.write().unwrap() = None;
 
-        let svc = SelectionServiceImpl::new(Context::new(), fake);
+        let svc = SelectionServiceImpl::new(fake);
         assert!(svc.selection().is_err());
         assert!(svc.set(None).is_err());
     }
