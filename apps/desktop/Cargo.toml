@@ -13,8 +13,14 @@ serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 smallvec = "1.13"
+futures = "0.3"
 gpui.workspace = true
 gpui_platform.workspace = true
 gpui-base.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
+rust-i18n.workspace = true
+once_cell.workspace = true
+serde = { workspace = true, features = ["derive"] }
+cordis-rs.workspace = true
+sys-locale = "0.3"

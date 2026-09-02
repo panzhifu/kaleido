@@ -9,7 +9,7 @@ use crate::{impl_service, service_plugin};
 use kaleido_core::{
     BlendMode, NodeContent, NodeId, Pixel, PixelFormat, Scene, TiledImage, TILE_SIZE,
 };
-use kaleido_traits::data::error::{ServiceError, ServiceResult};
+use kaleido_traits::service_error::{ServiceError, ServiceResult};
 use kaleido_traits::data::DataService;
 use kaleido_traits::render::RenderService;
 

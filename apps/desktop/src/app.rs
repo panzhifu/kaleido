@@ -3,9 +3,11 @@
 use std::path::PathBuf;
 
 use gpui::*;
-use gpui_component::{ActiveTheme as _, TitleBar, v_flex, dock::PanelEvent};
+use gpui_component::{ActiveTheme as _, TitleBar, v_flex};
 
-use kaleido_services::app::{AppConfig, KaleidoApp};
+use futures::channel::oneshot;
+use kaleido_services::app::KaleidoApp;
+use kaleido_traits::{ServiceResult, TaskId};
 
 /// Wrapper to implement GPUI `Global` for `KaleidoApp`.
 #[derive(Clone, Default)]
@@ -49,6 +51,8 @@ pub struct KaleidoEditor {
     dock_area: Entity<DockLayoutView>,
     canvas: Entity<Canvas>,
     status_bar: Entity<StatusBar>,
+    /// Id of the in-flight file operation, if any.
+    active_task: Option<TaskId>,
 }
 
 impl KaleidoEditor {
@@ -59,6 +63,49 @@ impl KaleidoEditor {
             cx.emit(crate::canvas::PanelEvent::LayoutChanged);
             cx.notify();
         });
+    }
+
+    /// Runs a blocking data-service operation on a `TaskService` background
+    /// thread, then refreshes the UI once it completes.
+    fn run_file_task(
+        &mut self,
+        name: &'static str,
+        op: impl FnOnce() -> ServiceResult<()> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let app = cx.global::<GlobalKaleidoApp>().clone();
+        let (tx, rx) = oneshot::channel::<ServiceResult<()>>();
+
+        match app.task_service().spawn(
+            name,
+            Box::new(move || {
+                let _ = tx.send(op());
+            }),
+        ) {
+            Ok(id) => {
+                self.active_task = Some(id);
+                cx.notify();
+            }
+            Err(e) => {
+                tracing::error!("failed to spawn {name} task: {e}");
+                return;
+            }
+        }
+
+        cx.spawn(async move |this, cx| {
+            // Resolves when the task body sends its result (or drops the sender).
+            let result = rx.await;
+            let _ = this.update(cx, |this, cx| {
+                this.active_task = None;
+                match result {
+                    Ok(Ok(())) => this.on_document_loaded(cx),
+                    Ok(Err(err)) => tracing::error!("{name} failed: {err}"),
+                    Err(_) => tracing::error!("{name} task dropped before completing"),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 }
 
@@ -109,6 +156,7 @@ impl KaleidoEditor {
             dock_area,
             canvas,
             status_bar,
+            active_task: None,
         }
     }
 
@@ -139,149 +187,95 @@ impl KaleidoEditor {
     }
 
     fn on_open_file(&mut self, _: &OpenFile, _window: &mut Window, cx: &mut Context<Self>) {
-        tracing::info!("[OPEN] === on_open_file triggered ===");
         // Defer the prompt so the menu popup fully dismisses first —
         // otherwise GPUI reports "window not found" while the popup
         // is still active.
         let this = cx.weak_entity();
-        tracing::info!("[OPEN] entity_id = {:?}, about to call cx.defer", this.entity_id());
         cx.defer(move |cx| {
-            tracing::info!("[OPEN] === defer closure running ===");
             let options = PathPromptOptions {
                 files: true,
                 directories: false,
                 multiple: false,
                 prompt: Some("打开图片".into()),
             };
-            tracing::info!("[OPEN] calling prompt_for_paths...");
             let receiver = cx.prompt_for_paths(options);
-            tracing::info!("[OPEN] prompt_for_paths returned, spawning await...");
-            let this = this.clone();
-            // Capture the global app reference before entering async context.
             let app = cx.global::<GlobalKaleidoApp>().clone();
+            let this = this.clone();
             cx.spawn(async move |cx| {
-                tracing::info!("[OPEN] spawned task: awaiting paths...");
-                let paths = match receiver.await {
-                    Ok(Ok(Some(paths))) => paths,
-                    other => {
-                        tracing::error!("[OPEN] prompt_for_paths receiver returned: {:?}", other);
-                        return;
-                    }
-                };
-                let Some(path) = paths.into_iter().next() else {
-                    tracing::warn!("[OPEN] no path selected");
+                let Ok(Ok(Some(paths))) = receiver.await else {
                     return;
                 };
-                tracing::info!("[OPEN] selected path: {path:?}");
-
-                // Load the file into the document service.
-                match app.data_service().open(std::path::Path::new(&path)) {
-                    Ok(()) => {
-                        tracing::info!("[OPEN] document loaded: {path:?}");
-                        // Notify the UI to refresh.
-                        let _ = this.update(cx, |this, cx| {
-                            this.on_document_loaded(cx);
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!("[OPEN] failed to open file: {e}");
-                    }
-                }
+                let Some(path) = paths.into_iter().next() else {
+                    return;
+                };
+                let _ = this.update(cx, |this, cx| {
+                    this.run_file_task(
+                        "open_file",
+                        move || app.data_service().open(std::path::Path::new(&path)),
+                        cx,
+                    );
+                });
             })
             .detach();
         });
-        tracing::info!("[OPEN] cx.defer call returned");
     }
 
     fn on_save(&mut self, _: &Save, _window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(app) = cx.try_global::<GlobalKaleidoApp>() {
-            if let Err(e) = app.data_service().save() {
-                tracing::warn!("save failed: {e}");
-            }
-        }
-        cx.notify();
+        let app = cx.global::<GlobalKaleidoApp>().clone();
+        self.run_file_task("save", move || app.data_service().save(), cx);
     }
 
     fn on_save_as(&mut self, _: &SaveAs, _window: &mut Window, cx: &mut Context<Self>) {
-        tracing::info!("[SAVE_AS] === on_save_as triggered ===");
         // Defer the prompt so the menu popup fully dismisses first.
         let this = cx.weak_entity();
-        tracing::info!("[SAVE_AS] entity_id = {:?}, about to call cx.defer", this.entity_id());
         cx.defer(move |cx| {
-            tracing::info!("[SAVE_AS] === defer closure running ===");
             let options = PathPromptOptions {
                 files: true,
                 directories: false,
                 multiple: false,
                 prompt: Some("另存为".into()),
             };
-            tracing::info!("[SAVE_AS] calling prompt_for_paths...");
             let receiver = cx.prompt_for_paths(options);
-            tracing::info!("[SAVE_AS] prompt_for_paths returned, spawning await...");
-            let this = this.clone();
             let app = cx.global::<GlobalKaleidoApp>().clone();
+            let this = this.clone();
             cx.spawn(async move |cx| {
-                tracing::info!("[SAVE_AS] spawned task: awaiting paths...");
-                let paths = match receiver.await {
-                    Ok(Ok(Some(paths))) => paths,
-                    other => {
-                        tracing::error!("[SAVE_AS] prompt_for_paths receiver returned: {:?}", other);
-                        return;
-                    }
-                };
-                let Some(path) = paths.into_iter().next() else {
-                    tracing::warn!("[SAVE_AS] no path selected");
+                let Ok(Ok(Some(paths))) = receiver.await else {
                     return;
                 };
-                tracing::info!("[SAVE_AS] selected path: {path:?}");
-                if let Err(e) = app.data_service().save_as(std::path::Path::new(&path)) {
-                    tracing::warn!("[SAVE_AS] save_as failed: {e}");
-                } else {
-                    tracing::info!("[SAVE_AS] saved to: {path:?}");
-                }
+                let Some(path) = paths.into_iter().next() else {
+                    return;
+                };
                 let _ = this.update(cx, |this, cx| {
-                    this.on_document_loaded(cx);
+                    this.run_file_task(
+                        "save_as",
+                        move || app.data_service().save_as(std::path::Path::new(&path)),
+                        cx,
+                    );
                 });
             })
             .detach();
         });
-        tracing::info!("[SAVE_AS] cx.defer call returned");
     }
 
     fn on_menu_item(&mut self, action: &MenuItemAction, _window: &mut Window, cx: &mut Context<Self>) {
-        tracing::info!("[MENU] on_menu_item called: action={}", action.0);
-        // File operations need deferred path prompts.
-        // Dispatch must be deferred until the menu popup fully dismisses,
-        // otherwise GPUI reports "window not found" while the popup is active.
+        // File operations dispatch their corresponding action; open/save-as
+        // defer their own prompts so the menu popup dismisses first.
         match action.0.as_str() {
             "menu-open" => {
-                tracing::info!("[MENU] deferring OpenFile dispatch");
-                cx.defer(move |cx| {
-                    tracing::info!("[MENU] deferred: dispatching OpenFile");
-                    cx.dispatch_action(&OpenFile);
-                });
+                cx.dispatch_action(&OpenFile);
                 return;
             }
             "menu-save" => {
-                tracing::info!("[MENU] deferring Save dispatch");
-                cx.defer(move |cx| {
-                    tracing::info!("[MENU] deferred: dispatching Save");
-                    cx.dispatch_action(&Save);
-                });
+                cx.dispatch_action(&Save);
                 return;
             }
             "menu-save-as" => {
-                tracing::info!("[MENU] deferring SaveAs dispatch");
-                cx.defer(move |cx| {
-                    tracing::info!("[MENU] deferred: dispatching SaveAs");
-                    cx.dispatch_action(&SaveAs);
-                });
+                cx.dispatch_action(&SaveAs);
                 return;
             }
             _ => {}
         }
         // Everything else is handled in the menu module.
-        tracing::info!("[MENU] delegating to handle_menu_action: {}", action.0);
         crate::menu::handle_menu_action(&action.0, &self.canvas.downgrade(), cx);
     }
 }

@@ -7,6 +7,7 @@ use gpui_component::StyledExt as _;
 use gpui_component::ActiveTheme as _;
 use gpui_component::dock::Panel;
 use gpui_base::dock::Panel as BasePanel;
+use rust_i18n::t;
 
 // Re-export PanelEvent so app.rs and menu/mod.rs can use it.
 pub use gpui_component::dock::PanelEvent;
@@ -298,7 +299,7 @@ impl Render for Canvas {
                 div()
                     .text_sm()
                     .text_color(cx.theme().foreground.opacity(0.5))
-                    .child("渲染中...")
+                    .child(t!("canvas.rendering"))
                     .into_any_element()
             } else {
                 div()
@@ -316,7 +317,7 @@ impl Render for Canvas {
                         div()
                             .text_sm()
                             .text_color(cx.theme().foreground.opacity(0.5))
-                            .child("没有打开的文档 — 使用 Ctrl+O 打开文件"),
+                            .child(t!("canvas.no_document")),
                     )
                     .into_any_element()
             })

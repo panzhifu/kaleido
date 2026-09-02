@@ -36,6 +36,8 @@ crossbeam-channel = "0.5"
 image = "0.25"
 wide = "0.7"
 rayon = "1.10"
+rust-i18n = "3"
+once_cell = "1.20"
 
 # GUI 框架（git 依赖；https 经全局 git insteadOf 重写为 ssh）
 gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }

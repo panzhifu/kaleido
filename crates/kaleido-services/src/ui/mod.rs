@@ -11,8 +11,8 @@ use cordis::Context;
 
 use crate::{impl_service, service_plugin};
 use kaleido_traits::plugins::panel::{Panel, PanelRegistry};
-use kaleido_traits::services::ui::{UiService, MAX_NOTIFICATIONS};
-use kaleido_traits::services::ServiceResult;
+use kaleido_traits::ui::{UiService, MAX_NOTIFICATIONS};
+use kaleido_traits::ServiceResult;
 
 /// Default implementation of [`UiService`].
 pub mod panel_registry;

@@ -18,8 +18,8 @@ use std::sync::RwLock;
 
 use crate::{impl_service, service_plugin};
 use kaleido_core::ResourceId;
-use kaleido_traits::services::resource::{ResourceData, ResourceKind, ResourceService};
-use kaleido_traits::services::{ServiceError, ServiceResult};
+use kaleido_traits::resource::{ResourceData, ResourceKind, ResourceService};
+use kaleido_traits::{ServiceError, ServiceResult};
 
 /// Recovers the guarded value from a poisoned lock.
 ///

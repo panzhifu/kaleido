@@ -153,7 +153,7 @@ fn cmd_demo(mut app: KaleidoApp) -> anyhow::Result<()> {
     // 8. Resource (resource manager).
     println!("8. Resources...");
     let resources = app.resource_service();
-    let font_id = resources.register(kaleido_traits::services::resource::ResourceData::Font {
+    let font_id = resources.register(kaleido_traits::resource::ResourceData::Font {
         name: "Demo Font".into(),
         bytes: vec![0, 1, 2, 3],
     })?;

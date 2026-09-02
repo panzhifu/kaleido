@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use kaleido_traits::data::error::ServiceResult;
-use kaleido_traits::keyboard::{ShortcutBinding, ShortcutService};
-use kaleido_traits::keyboard::ShortcutError;
+use kaleido_traits::service_error::ServiceResult;
+use kaleido_traits::shortcut::ShortcutService;
+use kaleido_traits::keyboard::ShortcutBinding;
 
 /// Default implementation of [`ShortcutService`].
 pub struct ShortcutServiceImpl {
@@ -39,25 +39,25 @@ impl Default for ShortcutServiceImpl {
 // ── ShortcutService trait implementation ────────────────────────────────────
 
 impl ShortcutService for ShortcutServiceImpl {
-    fn register_global(&self, binding: ShortcutBinding) -> Result<(), ShortcutError> {
+    fn register_global(&self, binding: ShortcutBinding) -> ServiceResult<()> {
         let mut global = self.global.write().unwrap_or_else(|p| p.into_inner());
         global.insert(binding.action.clone(), binding);
         Ok(())
     }
 
-    fn register_mode(&self, mode_id: &str, binding: ShortcutBinding) -> Result<(), ShortcutError> {
+    fn register_mode(&self, mode_id: &str, binding: ShortcutBinding) -> ServiceResult<()> {
         let mut mode = self.mode.write().unwrap_or_else(|p| p.into_inner());
         mode.entry(mode_id.to_string()).or_default().push(binding);
         Ok(())
     }
 
-    fn register_plugin(&self, binding: ShortcutBinding) -> Result<(), ShortcutError> {
+    fn register_plugin(&self, binding: ShortcutBinding) -> ServiceResult<()> {
         let mut plugin = self.plugin.write().unwrap_or_else(|p| p.into_inner());
         plugin.push(binding);
         Ok(())
     }
 
-    fn unregister(&self, action: &str) -> Result<(), ShortcutError> {
+    fn unregister(&self, action: &str) -> ServiceResult<()> {
         let mut global = self.global.write().unwrap_or_else(|p| p.into_inner());
         global.remove(action);
 
@@ -125,6 +125,26 @@ impl ShortcutService for ShortcutServiceImpl {
         }
 
         None
+    }
+
+    fn get_all_shortcuts(&self) -> Vec<ShortcutBinding> {
+        let mut result = Vec::new();
+        let global = self.global.read().unwrap_or_else(|e| e.into_inner());
+        result.extend(global.values().cloned());
+        let mode = self.mode.read().unwrap_or_else(|e| e.into_inner());
+        for bindings in mode.values() {
+            result.extend(bindings.clone());
+        }
+        let plugin = self.plugin.read().unwrap_or_else(|e| e.into_inner());
+        result.extend(plugin.clone());
+        result
+    }
+
+    fn register_shortcuts(&self, bindings: Vec<ShortcutBinding>) -> ServiceResult<()> {
+        for binding in bindings {
+            self.register_global(binding)?;
+        }
+        Ok(())
     }
 }
 

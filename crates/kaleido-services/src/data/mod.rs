@@ -15,7 +15,7 @@ use crate::{impl_service, service_plugin};
 pub mod format;
 
 use kaleido_traits::data::{DataService, ServiceError, ServiceResult};
-use kaleido_traits::data::codec::FileCodecRegistry;
+use kaleido_traits::codec::FileCodecRegistry;
 use kaleido_traits::plugins::events::{ImageClearedEvent, ImageLoadedEvent, ImageSavedEvent, KaleidoEmitter};
 
 // ── DataServiceImpl ───────────────────────────────────────────────────────

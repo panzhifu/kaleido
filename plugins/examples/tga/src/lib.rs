@@ -36,8 +36,8 @@ impl FormatCodec for TgaCodec {
         "image/x-tga"
     }
 
-    fn capability(&self) -> kaleido_traits::data::codec::CodecCapability {
-        kaleido_traits::data::codec::CodecCapability {
+    fn capability(&self) -> kaleido_traits::codec::CodecCapability {
+        kaleido_traits::codec::CodecCapability {
             can_read: true,
             can_write: true,
             can_read_metadata: false,
@@ -174,7 +174,7 @@ pub fn install() -> cordis::PluginHandle {
             use kaleido_traits::FileCodecRegistry;
 
             let registry: Arc<dyn FileCodecRegistry> =
-                kaleido_traits::data::resolve_format_registry(&ctx)?;
+                kaleido_traits::resolve_format_registry(&ctx)?;
             registry.register_codec(Arc::new(TgaCodec::new()));
 
             tracing::info!("TGA format plugin installed");

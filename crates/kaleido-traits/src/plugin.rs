@@ -18,7 +18,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crate::data::codec::ImageFormat;
+use crate::codec::ImageFormat;
 use crate::keyboard::ShortcutBinding;
 use crate::plugins::panel::Panel;
 use crate::plugins::tool::Tool;

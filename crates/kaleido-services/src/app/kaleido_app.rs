@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use cordis::{Context, Result};
-use kaleido_traits::services::{
+use kaleido_traits::{
     AppService, ColorService, DataService, HistoryService, LayerService,
     PluginService, RenderService, ResourceService, SelectionService,
     ShortcutService, TaskService, UiService,
@@ -269,7 +269,7 @@ impl KaleidoApp {
 mod tests {
     use super::*;
     use kaleido_core::PixelFormat;
-    use kaleido_traits::services::task::TaskStatus;
+    use kaleido_traits::task::TaskStatus;
 
     #[test]
     fn test_boot_resolves_all_twelve_managers() {

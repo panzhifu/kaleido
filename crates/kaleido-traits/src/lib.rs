@@ -3,30 +3,33 @@
 //! This crate defines the traits (interfaces) that `kaleido-services`
 //! implements and that plugins consume.
 
-// ── Document-level service contracts ──────────────────────────────────────
+// ── Service contracts ───────────────────────────────────────────────────
+pub mod app;
+pub mod codec;
 pub mod color;
 pub mod data;
 pub mod history;
 pub mod layer;
 pub mod plugin;
 pub mod render;
+pub mod resource;
 pub mod selection;
-
-// ── Application-level service contracts ──────────────────────────────────
-pub mod services;
+pub mod service_error;
+pub mod shortcut;
+pub mod task;
+pub mod ui;
 
 // ── Keyboard / shortcut contract ─────────────────────────────────────────
 pub mod keyboard;
-pub mod shortcut;
 
 // ── Plugin contracts (traits implemented by plugins) ─────────────────────
 pub mod plugins;
 
 // ── Re-exports — document-level services ─────────────────────────────────
 
+pub use codec::{CodecCapability, FileCodecRegistry, FormatCodec, ImageFormat, resolve_format_registry};
 pub use color::ColorService;
-pub use data::{DataService, ServiceError, ServiceResult};
-pub use data::codec::{CodecCapability, FileCodecRegistry, FormatCodec, ImageFormat};
+pub use data::DataService;
 pub use history::{HistoryEntry as HistorySvcEntry, HistoryService, Snapshot, DirtyTileSnapshot};
 pub use layer::{LayerInfo, LayerService};
 pub use plugin::{PluginError, PluginInfo, PluginKind, PluginResult, PluginService};
@@ -35,18 +38,20 @@ pub use selection::SelectionService;
 
 // ── Re-exports — application-level services ──────────────────────────────
 
-pub use services::{AppService, AppSettings};
-pub use services::resource::{ResourceData, ResourceKind, ResourceService};
-pub use services::task::{TaskId, TaskService, TaskStatus};
-pub use services::ui::{UiService, MAX_NOTIFICATIONS};
+pub use app::{AppService, AppSettings};
+pub use resource::{ResourceData, ResourceKind, ResourceService};
+pub use service_error::{ServiceError, ServiceResult};
+pub use task::{TaskId, TaskService, TaskStatus};
+pub use ui::{UiService, MAX_NOTIFICATIONS};
 
 // ── Re-exports — keyboard / shortcut ─────────────────────────────────────
 
 pub use keyboard::{
     KeyCode, KeyEvent, KeyModifiers, KeyState, NoOverride, OverrideResult, ShortcutBinding,
-    ShortcutError, ShortcutRegisterResult, ShortcutRegistry, ShortcutService, ShortcutSource,
+    ShortcutError, ShortcutRegisterResult, ShortcutRegistry, ShortcutSource,
     ToolShortcutOverride, resolve_key,
 };
+pub use shortcut::ShortcutService;  // override keyboard::ShortcutService
 
 // ── Re-exports — plugin contracts ────────────────────────────────────────
 

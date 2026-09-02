@@ -2,7 +2,7 @@
 //!
 //! Layers are [`kaleido_core::scene::Node`]s in the document's scene graph (pixel
 //! layers, groups, vector objects, text objects). All mutations go through
-//! the injected [`super::data::data::DataService`]'s single write path, so
+//! the injected [`crate::data::DataService`]'s single write path, so
 //! every layer operation is automatically undoable.
 
 use serde::{Deserialize, Serialize};

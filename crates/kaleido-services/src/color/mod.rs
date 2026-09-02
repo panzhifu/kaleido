@@ -7,7 +7,7 @@ use std::sync::{Arc, RwLock};
 use crate::{impl_service, service_plugin};
 use kaleido_core::{Color, ColorProfile};
 use kaleido_traits::color::ColorService;
-use kaleido_traits::data::error::{ServiceError, ServiceResult};
+use kaleido_traits::service_error::{ServiceError, ServiceResult};
 use kaleido_traits::data::DataService;
 
 /// Default implementation of [`ColorService`].

@@ -6,11 +6,8 @@
 //! All content editing (layers, pixels, history) is done by other services
 //! through the [`document()`] accessor.
 
-pub mod codec;
-pub mod error;
-
-pub use codec::resolve_format_registry;
-pub use error::{ServiceError, ServiceResult};
+pub use crate::codec::resolve_format_registry;
+pub use crate::service_error::{ServiceError, ServiceResult};
 
 use std::path::{Path, PathBuf};
 
@@ -43,7 +40,7 @@ pub trait DataService: Send + Sync + 'static {
     /// Opens a document from disk.
     ///
     /// `.kld` files are deserialized as [`Document`]s; any other extension
-    /// is decoded as a bitmap (via the [`FileCodecRegistry`](crate::data::codec::FileCodecRegistry))
+    /// is decoded as a bitmap (via the [`FileCodecRegistry`](crate::codec::FileCodecRegistry))
     /// and wrapped in a document with one pixel layer.
     ///
     /// On failure the previously open document (if any) is left untouched.

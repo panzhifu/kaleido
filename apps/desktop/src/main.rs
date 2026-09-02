@@ -1,22 +1,35 @@
 //! Kaleido desktop application entry point.
 
 use anyhow::Result;
-use gpui::{App, AppContext, Bounds, KeyBinding, WindowBounds, WindowDecorations, px, size};
+use gpui::{App, AppContext, Bounds, KeyBinding, Pixels, WindowBounds, WindowDecorations, px, size};
 use gpui_component::{Root, TitleBar};
 use gpui_component_assets::Assets;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tracing::info;
+use std::path::PathBuf;  // used in parse_initial_path
+use tracing::{error, info, warn};
 
-use kaleido_services::app::{AppConfig, KaleidoApp};
+use crate::boot::{BootManager, BootState};
+
+use rust_i18n::t;
 
 mod app;
+mod boot;
 mod canvas;
 mod dock;
 mod menu;
 mod status_bar;
 
-use app::{GlobalKaleidoApp, KaleidoEditor, OpenFile, Redo, Save, SaveAs, Undo};
+use app::{GlobalKaleidoApp, OpenFile, Redo, Save, SaveAs, Undo};
+
+// ---------------------------------------------------------------------------
+// i18n
+// ---------------------------------------------------------------------------
+
+rust_i18n::i18n!("locales");
+
+/// Returns the system locale as a language identifier (e.g. `"en"`, `"zh-CN"`).
+fn system_locale() -> String {
+    sys_locale::get_locale().unwrap_or_else(|| "en".to_string())
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -43,59 +56,72 @@ const KEY_SAVE_AS: &str = "ctrl-shift-s";
 fn main() -> Result<()> {
     init_tracing();
 
-    info!(app = APP_NAME, "starting application");
+    info!(app = APP_NAME, "{}", t!("app.starting"));
 
     // Optional image path on the command line: `kaleido-desktop photo.png`.
     let initial_path = parse_initial_path();
     if let Some(ref path) = initial_path {
-        info!(?path, "initial file path provided");
+        info!(?path, "{}", t!("app.initial_file"));
     }
 
     let app = gpui_platform::application().with_assets(Assets);
 
     app.run(move |cx: &mut App| {
+        // Set locale based on system language.
+        let locale = system_locale();
+        rust_i18n::set_locale(&locale);
+        info!("Locale set to: {locale}");
+
         gpui_component::init(cx);
         bind_keyboard_shortcuts(cx);
 
-        // Boot the service layer and register as a global.
-        let kaleido_app =
-            KaleidoApp::boot(AppConfig::default()).expect("failed to boot KaleidoApp");
-        cx.set_global(GlobalKaleidoApp(kaleido_app));
-
+        // Use default window bounds for now.
+        // After boot completes, the editor will load saved bounds via AppService.
         let bounds = Bounds::centered(
             None,
             size(px(DEFAULT_WINDOW_WIDTH), px(DEFAULT_WINDOW_HEIGHT)),
             cx,
         );
+        let window_options = make_window_options(bounds);
 
-        let mut options = TitleBar::window_options();
-        options.window_bounds = Some(WindowBounds::Windowed(bounds));
-        options.focus = true;
-        options.window_decorations = Some(WindowDecorations::Client);
-        if let Some(titlebar) = options.titlebar.as_mut() {
-            titlebar.title = Some(APP_NAME.into());
-        }
+        // Spawn async boot on a background thread.
+        let boot_state = BootState::spawn();
+        let initial_path = initial_path.clone();
 
-        if let Err(err) = cx.open_window(options, move |window, cx| {
-            let path = initial_path.clone();
-            let view = cx.new(|cx| KaleidoEditor::new(path, window, cx));
+        // Open the main window with a boot manager that shows loading -> editor.
+        if let Err(err) = cx.open_window(window_options, move |window, cx| {
+            let view = cx.new(|cx| {
+                BootManager::new(boot_state, initial_path.clone(), window, cx)
+            });
             cx.new(|cx| Root::new(view, window, cx))
         }) {
-            tracing::error!(error = %err, "failed to open main window");
+            error!(error = %err, "{}", t!("app.failed_to_open_window"));
             return;
         }
 
         cx.activate(true);
-        info!("main window opened successfully");
+        info!("{}", t!("app.main_window_opened"));
     });
 
-    info!(app = APP_NAME, "application exited");
+    info!(app = APP_NAME, "{}", t!("app.exited"));
     Ok(())
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Builds `WindowOptions` from the given bounds.
+fn make_window_options(bounds: Bounds<Pixels>) -> gpui::WindowOptions {
+    let mut options = TitleBar::window_options();
+    options.window_bounds = Some(WindowBounds::Windowed(bounds));
+    options.focus = true;
+    options.window_decorations = Some(WindowDecorations::Client);
+    if let Some(titlebar) = options.titlebar.as_mut() {
+        titlebar.title = Some(APP_NAME.into());
+    }
+    options
+}
 
 /// Initialise the `tracing` subscriber with sensible defaults.
 fn init_tracing() {
@@ -116,7 +142,7 @@ fn parse_initial_path() -> Option<PathBuf> {
     let path = std::env::args().nth(1).map(PathBuf::from);
     if let Some(ref p) = path {
         if p.as_os_str().is_empty() {
-            tracing::warn!("empty path argument provided, ignoring");
+            warn!("empty path argument provided, ignoring");
             return None;
         }
     }

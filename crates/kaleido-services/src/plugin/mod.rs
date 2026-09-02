@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use cordis::Context;
 
 use crate::{impl_service, service_plugin};
-use kaleido_traits::data::codec::FileCodecRegistry;
+use kaleido_traits::codec::FileCodecRegistry;
 use kaleido_traits::plugins::events::{KaleidoEmitter, PluginInstalledEvent, PluginUninstalledEvent};
 use kaleido_traits::plugins::tool::Tool;
 

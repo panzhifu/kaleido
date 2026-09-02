@@ -31,4 +31,12 @@ pub trait ShortcutService: Send + Sync + 'static {
 
     /// The key currently bound to an action, if any.
     fn key_for(&self, action: &str) -> Option<String>;
+
+    // ── Persistence ───────────────────────────────────────────────────
+
+    /// Returns all registered shortcuts (global + mode + plugin).
+    fn get_all_shortcuts(&self) -> Vec<ShortcutBinding>;
+
+    /// Registers multiple shortcuts at once (used after loading from disk).
+    fn register_shortcuts(&self, bindings: Vec<ShortcutBinding>) -> ServiceResult<()>;
 }

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::{impl_service, service_plugin};
 use kaleido_core::SelectionMask;
-use kaleido_traits::data::error::{ServiceError, ServiceResult};
+use kaleido_traits::service_error::{ServiceError, ServiceResult};
 use kaleido_traits::data::DataService;
 use kaleido_traits::selection::SelectionService;
 

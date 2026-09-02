@@ -2,7 +2,7 @@
 //!
 //! The selection is a grayscale [`SelectionMask`] stored on the document
 //! (`None` = select all). All operations flow through the injected
-//! [`super::data::data::DataService`] single write path.
+//! [`crate::data::DataService`] single write path.
 
 use super::ServiceResult;
 use kaleido_core::SelectionMask;

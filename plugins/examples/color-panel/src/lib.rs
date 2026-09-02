@@ -14,7 +14,7 @@ use kaleido_traits::layer::LayerService;
 use kaleido_traits::plugins::panel::{
     Panel, PanelButton, PanelContext, PanelElement, PanelSection,
 };
-use kaleido_traits::services::ui::UiService;
+use kaleido_traits::ui::UiService;
 use serde_json::Value;
 
 // ---------------------------------------------------------------------------

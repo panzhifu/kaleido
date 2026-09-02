@@ -49,8 +49,8 @@ use std::thread::JoinHandle;
 
 
 use crate::{impl_service, service_plugin};
-use kaleido_traits::services::task::{TaskId, TaskService, TaskStatus};
-use kaleido_traits::services::{ServiceError, ServiceResult};
+use kaleido_traits::task::{TaskId, TaskService, TaskStatus};
+use kaleido_traits::{ServiceError, ServiceResult};
 
 /// Auto-prune trigger: `spawn` sweeps finished tasks once the map already
 /// holds at least this many entries, so the map stays bounded even if

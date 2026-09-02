@@ -29,4 +29,4 @@ pub mod registry;
 pub use registry::FormatRegistry;
 
 /// Re-export the capability struct for use in format files.
-pub use kaleido_traits::data::codec::CodecCapability;
+pub use kaleido_traits::codec::CodecCapability;

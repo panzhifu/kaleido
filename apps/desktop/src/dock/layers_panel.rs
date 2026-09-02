@@ -6,6 +6,7 @@ use gpui_component::{
     ActiveTheme as _, Icon, IconName, StyledExt as _, dock::PanelEvent,
 };
 use gpui_component::dock::Panel;
+use rust_i18n::t;
 
 use crate::GlobalKaleidoApp;
 
@@ -111,7 +112,7 @@ impl Render for LayersPanel {
                         div()
                             .text_xs()
                             .font_weight(gpui::FontWeight::BOLD)
-                            .child("图层"),
+                            .child(t!("layers.title")),
                     )
                     .child(
                         div()
@@ -253,13 +254,13 @@ impl Render for LayersPanel {
                         div()
                             .text_xs()
                             .text_color(cx.theme().foreground.opacity(0.5))
-                            .child("没有图层"),
+                            .child(t!("layers.no_layers")),
                     )
                     .child(
                         div()
                             .text_xs()
                             .text_color(cx.theme().foreground.opacity(0.3))
-                            .child("打开图片或点击 + 添加"),
+                            .child(t!("layers.open_or_add")),
                     )
                     .into_any_element()
             })

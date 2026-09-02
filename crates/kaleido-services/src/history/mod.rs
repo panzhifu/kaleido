@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{impl_service, service_plugin};
 use kaleido_core::Document;
-use kaleido_traits::data::error::{ServiceError, ServiceResult};
+use kaleido_traits::service_error::{ServiceError, ServiceResult};
 use kaleido_traits::data::DataService;
 use kaleido_traits::history::{HistoryEntry, HistoryService, Snapshot};
 

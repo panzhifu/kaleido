@@ -2,14 +2,19 @@
 //! configuration, editing mode, notifications.
 
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::RwLock;
+
+use dirs::config_dir;
 
 use cordis::Context;
 
 use crate::{impl_service, service_plugin};
-use kaleido_traits::services::app::{AppService, AppSettings};
-use kaleido_traits::services::ui::UiService;
-use kaleido_traits::services::{ServiceError, ServiceResult};
+use kaleido_traits::app::{AppService, AppSettings};
+use kaleido_traits::shortcut::ShortcutService;
+use kaleido_traits::ui::UiService;
+use kaleido_traits::{ServiceError, ServiceResult};
 use tracing::{debug, info};
 
 use crate::ui::UiServiceImpl;
@@ -17,6 +22,17 @@ use crate::ui::UiServiceImpl;
 /// The editing mode used until [`AppService::set_mode`] or settings override
 /// changes it.
 pub(crate) const DEFAULT_MODE: &str = "pixel";
+
+/// Returns the path to the persisted settings file.
+///
+/// Uses the system's standard configuration directory:
+/// - Linux:   `~/.config/kaleido/settings.json`
+/// - macOS:   `~/Library/Application Support/kaleido/settings.json`
+/// - Windows: `%APPDATA%\kaleido\settings.json`
+fn settings_file_path() -> PathBuf {
+    let base = config_dir().unwrap_or_else(|| PathBuf::from("."));
+    base.join("kaleido").join("settings.json")
+}
 
 pub mod kaleido_app;
 
@@ -90,6 +106,7 @@ impl AppServiceImpl {
         }
         Ok(())
     }
+
 }
 
 impl_service!(AppServiceImpl, "app_service");
@@ -169,6 +186,83 @@ impl AppService for AppServiceImpl {
             .read()
             .map(|m| m.clone())
             .unwrap_or_else(|e| e.into_inner().clone())
+    }
+
+    fn save(&self) -> ServiceResult<()> {
+        // Sync shortcuts from ShortcutService into settings before saving.
+        if let Ok(shortcut_svc) = self.ctx.get::<crate::shortcut::ShortcutServiceImpl>("shortcut_service") {
+            if let Some(svc) = shortcut_svc {
+                let mut settings = self.settings.write().map_err(|e| {
+                    ServiceError::Other("settings lock poisoned".into())
+                })?;
+                settings.shortcuts = svc.get_all_shortcuts();
+            }
+        }
+
+        let settings = self.settings();
+        let json = serde_json::to_string_pretty(&settings).map_err(|e| {
+            ServiceError::Other(format!("failed to serialize settings: {e}"))
+        })?;
+        let path = settings_file_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                ServiceError::Other(format!("failed to create config dir: {e}"))
+            })?;
+        }
+        std::fs::write(&path, json).map_err(|e| {
+            ServiceError::Other(format!("failed to write settings file: {e}"))
+        })?;
+        tracing::info!("Settings saved to {}", path.display());
+        Ok(())
+    }
+
+    fn load(&self) -> ServiceResult<()> {
+        let path = settings_file_path();
+        if !path.exists() {
+            tracing::info!("No settings file found, using defaults");
+            return Ok(());
+        }
+        let json = std::fs::read_to_string(&path).map_err(|e| {
+            ServiceError::Other(format!("failed to read settings file: {e}"))
+        })?;
+        let loaded: AppSettings = serde_json::from_str(&json).map_err(|e| {
+            ServiceError::Other(format!("failed to parse settings: {e}"))
+        })?;
+
+        // Register loaded shortcuts into ShortcutService.
+        if !loaded.shortcuts.is_empty() {
+            if let Ok(shortcut_svc) = self.ctx.get::<crate::shortcut::ShortcutServiceImpl>("shortcut_service") {
+                if let Some(svc) = shortcut_svc {
+                    svc.register_shortcuts(loaded.shortcuts.clone())?;
+                    tracing::info!("Loaded {} shortcuts from settings", loaded.shortcuts.len());
+                }
+            }
+        }
+
+        self.update_settings(loaded)?;
+        tracing::info!("Settings loaded from {}", path.display());
+        Ok(())
+    }
+
+    fn save_window_state(
+        &self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        maximized: bool,
+    ) -> ServiceResult<()> {
+        {
+            let mut s = self.settings.write().map_err(|e| {
+                ServiceError::Other("settings lock poisoned".into())
+            })?;
+            s.window_x = x;
+            s.window_y = y;
+            s.window_width = width;
+            s.window_height = height;
+            s.window_maximized = maximized;
+        }
+        self.save()
     }
 
     fn notify(&self, message: &str) {

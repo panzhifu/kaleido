@@ -5,7 +5,7 @@
 //! [`GlobalKaleidoApp`] to perform actions directly.
 
 use gpui::*;
-use gpui_component::dock::PanelEvent;
+use rust_i18n::t;
 use gpui_component::{
     ActiveTheme as _, button::{Button, ButtonVariants}, h_flex, Sizable,
     menu::{DropdownMenu, PopupMenu},
@@ -31,11 +31,11 @@ pub enum MenuKind {
 }
 
 const MENU_LABELS: &[(MenuKind, &str)] = &[
-    (MenuKind::File, "文件"),
-    (MenuKind::Edit, "编辑"),
-    (MenuKind::View, "视图"),
-    (MenuKind::Mode, "模式"),
-    (MenuKind::Help, "帮助"),
+    (MenuKind::File, "menu.file"),
+    (MenuKind::Edit, "menu.edit"),
+    (MenuKind::View, "menu.view"),
+    (MenuKind::Mode, "menu.mode"),
+    (MenuKind::Help, "menu.help"),
 ];
 
 impl MenuBar {
@@ -59,17 +59,16 @@ impl Render for MenuBar {
             .track_focus(&self.focus_handle)
             .children(MENU_LABELS.iter().map(|(kind, label)| {
                 let kind = *kind;
-                let label_str = *label;
+                let label_str = t!(*label).to_string();
                 let canvas = self.canvas.clone();
 
-                // Each menu label is a ghost Button that opens a dropdown.
-                Button::new(label_str)
+                Button::new(("menu-bar", kind as u64))
                     .ghost()
                     .small()
                     .py_0p5()
                     .px_2()
                     .compact()
-                    .label(label_str.to_string())
+                    .label(label_str.clone())
                     .dropdown_menu(move |popup_menu, _, _| {
                         menu_items_for(popup_menu, kind, &canvas)
                     })
@@ -81,7 +80,6 @@ impl Render for MenuBar {
 
 // ── Menu builders ─────────────────────────────────────────────────────────
 
-/// Returns a function that populates a [`PopupMenu`] for the given [`MenuKind`].
 fn menu_items_for(
     menu: PopupMenu,
     kind: MenuKind,
@@ -89,71 +87,56 @@ fn menu_items_for(
 ) -> PopupMenu {
     match kind {
         MenuKind::File => menu
-            .menu("打开", Box::new(MenuItemAction("menu-open".into())))
-            .menu("保存", Box::new(MenuItemAction("menu-save".into())))
-            .menu("另存为", Box::new(MenuItemAction("menu-save-as".into())))
+            .menu(t!("menu.open"), Box::new(MenuItemAction("menu-open".into())))
+            .menu(t!("menu.save"), Box::new(MenuItemAction("menu-save".into())))
+            .menu(t!("menu.save_as"), Box::new(MenuItemAction("menu-save-as".into())))
             .separator()
-            .menu("退出", Box::new(MenuItemAction("menu-exit".into()))),
+            .menu(t!("menu.exit"), Box::new(MenuItemAction("menu-exit".into()))),
         MenuKind::Edit => menu
-            .menu("撤销", Box::new(MenuItemAction("menu-undo".into())))
-            .menu("重做", Box::new(MenuItemAction("menu-redo".into()))),
+            .menu(t!("menu.undo"), Box::new(MenuItemAction("menu-undo".into())))
+            .menu(t!("menu.redo"), Box::new(MenuItemAction("menu-redo".into()))),
         MenuKind::View => menu
-            .menu("放大", Box::new(MenuItemAction("menu-zoom-in".into())))
-            .menu("缩小", Box::new(MenuItemAction("menu-zoom-out".into())))
-            .menu("适应窗口", Box::new(MenuItemAction("menu-fit".into()))),
+            .menu(t!("menu.zoom_in"), Box::new(MenuItemAction("menu-zoom-in".into())))
+            .menu(t!("menu.zoom_out"), Box::new(MenuItemAction("menu-zoom-out".into())))
+            .menu(t!("menu.fit"), Box::new(MenuItemAction("menu-fit".into()))),
         MenuKind::Mode => menu
-            .menu_with_check("像素", false, Box::new(MenuItemAction("menu-mode-pixel".into())))
-            .menu_with_check("矢量", false, Box::new(MenuItemAction("menu-mode-vector".into())))
-            .menu_with_check("绘画", false, Box::new(MenuItemAction("menu-mode-paint".into())))
-            .menu_with_check("排版", false, Box::new(MenuItemAction("menu-mode-type".into())))
-            .menu_with_check("动画", false, Box::new(MenuItemAction("menu-mode-animation".into()))),
+            .menu_with_check(t!("menu.mode_pixel"), false, Box::new(MenuItemAction("menu-mode-pixel".into())))
+            .menu_with_check(t!("menu.mode_vector"), false, Box::new(MenuItemAction("menu-mode-vector".into())))
+            .menu_with_check(t!("menu.mode_paint"), false, Box::new(MenuItemAction("menu-mode-paint".into())))
+            .menu_with_check(t!("menu.mode_type"), false, Box::new(MenuItemAction("menu-mode-type".into())))
+            .menu_with_check(t!("menu.mode_animation"), false, Box::new(MenuItemAction("menu-mode-animation".into()))),
         MenuKind::Help => menu
-            .menu("关于 Kaleido", Box::new(MenuItemAction("menu-about".into()))),
+            .menu(t!("menu.about"), Box::new(MenuItemAction("menu-about".into()))),
     }
 }
 
 // ── Actions ──────────────────────────────────────────────────────────────
 
 /// Action dispatched when a dropdown menu item is clicked.
-///
-/// The actual work is performed in [`handle_menu_action`] — `app.rs` just
-/// forwards to it via its `on_menu_item` listener.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuItemAction(pub String);
 
 impl gpui::Action for MenuItemAction {
     fn name(&self) -> &'static str { "menu-item" }
-
     fn name_for_type() -> &'static str { "menu-item" }
-
     fn boxed_clone(&self) -> Box<dyn gpui::Action> { Box::new(self.clone()) }
-
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
         other.as_any().downcast_ref::<Self>().map_or(false, |a| self == a)
     }
-
     fn build(_: serde_json::Value) -> Result<Box<dyn gpui::Action>> {
         Ok(Box::new(MenuItemAction(String::new())))
     }
 }
 
 /// Performs the actual work for a menu-item action.
-///
-/// Called from `app.rs`'s `on_menu_item` handler.  File operations
-/// (`menu-open`, `menu-save`, `menu-save-as`) are **not** handled here
-/// — they need deferred path prompts that require a `WindowContext`,
-/// which the menu module cannot access.  Those are handled by action
-/// dispatching in `app.rs`.
 pub fn handle_menu_action(
     action: &str,
     canvas: &gpui::WeakEntity<crate::canvas::Canvas>,
     cx: &mut App,
 ) {
-    tracing::info!("[HANDLE_MENU] action={}", action);
     match action {
         "menu-open" | "menu-save" | "menu-save-as" => {
             // Handled by action dispatching in app.rs.
-            tracing::info!("[HANDLE_MENU] file action '{}' should have been dispatched in app.rs", action);
         }
         "menu-exit" => {
             cx.quit();
@@ -201,20 +184,14 @@ pub fn handle_menu_action(
         "menu-about" => {
             let Some(app) = cx.try_global::<GlobalKaleidoApp>() else { return };
             let version = app.app_service().version();
-            app.app_service().notify(
-                &format!("Kaleido {version} — AI-native image workstation"),
-            );
+            app.app_service().notify(&format!("Kaleido {version} — AI-native image workstation"));
         }
         _ => {}
     }
 }
 
 /// Switches editing mode and refreshes the canvas.
-fn set_mode(
-    mode: &str,
-    canvas: &gpui::WeakEntity<crate::canvas::Canvas>,
-    cx: &mut App,
-) {
+fn set_mode(mode: &str, canvas: &gpui::WeakEntity<crate::canvas::Canvas>, cx: &mut App) {
     let Some(app) = cx.try_global::<GlobalKaleidoApp>() else { return };
     if let Err(e) = app.app_service().set_mode(mode) {
         tracing::warn!("failed to set mode: {e}");
@@ -225,13 +202,12 @@ fn set_mode(
 }
 
 /// Refreshes the canvas after a document-changing operation.
-fn refresh_canvas(
-    canvas: &gpui::WeakEntity<crate::canvas::Canvas>,
-    cx: &mut App,
-) {
+fn refresh_canvas(canvas: &gpui::WeakEntity<crate::canvas::Canvas>, cx: &mut App) {
     let _ = canvas.update(cx, |canvas, cx| {
         canvas.refresh();
         cx.emit(PanelEvent::LayoutChanged);
         cx.notify();
     });
 }
+
+use gpui_component::dock::PanelEvent;

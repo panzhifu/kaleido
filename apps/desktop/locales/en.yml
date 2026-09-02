@@ -1,0 +1,134 @@
+{
+    "en": {
+        "app": {
+            "name": "Kaleido",
+            "starting": "Starting application",
+            "main_window_opened": "Main window opened successfully",
+            "exited": "Application exited",
+            "initial_file": "Initial file path provided",
+            "failed_to_open_initial": "Failed to open initial file: {error}",
+            "failed_to_open_window": "Failed to open main window: {error}",
+            "failed_to_boot": "Failed to boot application: {error}",
+            "status_check_complete": "Status check complete"
+        },
+        "menu": {
+            "file": "File",
+            "edit": "Edit",
+            "view": "View",
+            "mode": "Mode",
+            "help": "Help",
+            "open": "Open",
+            "save": "Save",
+            "save_as": "Save As",
+            "exit": "Exit",
+            "undo": "Undo",
+            "redo": "Redo",
+            "zoom_in": "Zoom In",
+            "zoom_out": "Zoom Out",
+            "fit": "Fit to Window",
+            "mode_pixel": "Pixel",
+            "mode_vector": "Vector",
+            "mode_paint": "Paint",
+            "mode_type": "Typography",
+            "mode_animation": "Animation",
+            "about": "About Kaleido"
+        },
+        "canvas": {
+            "no_document": "No open document — use Ctrl+O to open a file",
+            "rendering": "Rendering..."
+        },
+        "layers": {
+            "title": "Layers",
+            "no_layers": "No layers",
+            "open_or_add": "Open an image or click + to add"
+        },
+        "color": {
+            "foreground": "Foreground",
+            "doc_info": "Document Info",
+            "no_document": "No document open",
+            "size": "Size: {width} × {height}",
+            "layer_count": "Layers: {count}"
+        },
+        "status": {
+            "ready": "Ready",
+            "mode": "Mode: {mode}",
+            "layers": "Layers: {count}",
+            "layers_none": "Layers: —",
+            "history": "History: {undo} / ↩ {redo}",
+            "zoom": "Zoom: {percent}%"
+        },
+        "dialog": {
+            "open_image": "Open Image",
+            "save_as": "Save As"
+        },
+        "about": {
+            "message": "Kaleido {version} — AI-native image workstation"
+        }
+    },
+    "zh-CN": {
+        "app": {
+            "name": "Kaleido",
+            "starting": "启动应用程序",
+            "main_window_opened": "主窗口打开成功",
+            "exited": "应用程序已退出",
+            "initial_file": "提供了初始文件路径",
+            "failed_to_open_initial": "无法打开初始文件: {error}",
+            "failed_to_open_window": "无法打开主窗口: {error}",
+            "failed_to_boot": "无法启动应用程序: {error}",
+            "status_check_complete": "状态检查完成"
+        },
+        "menu": {
+            "file": "文件",
+            "edit": "编辑",
+            "view": "视图",
+            "mode": "模式",
+            "help": "帮助",
+            "open": "打开",
+            "save": "保存",
+            "save_as": "另存为",
+            "exit": "退出",
+            "undo": "撤销",
+            "redo": "重做",
+            "zoom_in": "放大",
+            "zoom_out": "缩小",
+            "fit": "适应窗口",
+            "mode_pixel": "像素",
+            "mode_vector": "矢量",
+            "mode_paint": "绘画",
+            "mode_type": "排版",
+            "mode_animation": "动画",
+            "about": "关于 Kaleido"
+        },
+        "canvas": {
+            "no_document": "没有打开的文档 — 使用 Ctrl+O 打开文件",
+            "rendering": "渲染中..."
+        },
+        "layers": {
+            "title": "图层",
+            "no_layers": "没有图层",
+            "open_or_add": "打开图片或点击 + 添加"
+        },
+        "color": {
+            "foreground": "前景色",
+            "doc_info": "文档信息",
+            "no_document": "没有打开的文档",
+            "size": "尺寸: {width} × {height}",
+            "layer_count": "图层数: {count}"
+        },
+        "status": {
+            "ready": "就绪",
+            "mode": "模式: {mode}",
+            "layers": "图层: {count}",
+            "layers_none": "图层: —",
+            "history": "历史: {undo} / ↩ {redo}",
+            "zoom": "缩放: {percent}%"
+        },
+        "dialog": {
+            "open_image": "打开图片",
+            "save_as": "另存为"
+        },
+        "about": {
+            "message": "Kaleido {version} — AI 原生图像工作站"
+        }
+    }
+}
