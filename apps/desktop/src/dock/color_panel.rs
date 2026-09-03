@@ -1,9 +1,11 @@
 //! Color panel — shows document properties and color information.
 
 use gpui::*;
+use gpui::prelude::FluentBuilder as _;
 use gpui_base::dock::Panel as BasePanel;
-use gpui_component::{ActiveTheme as _, StyledExt as _, dock::PanelEvent};
+use gpui_component::{ActiveTheme as _, dock::PanelEvent};
 use gpui_component::dock::Panel;
+use rust_i18n::t;
 
 use crate::GlobalKaleidoApp;
 
@@ -41,15 +43,28 @@ impl ColorPanelProps {
     /// Refreshes data from services.
     fn refresh(&mut self) {
         let data = self.app.data_service();
-        if let Ok(Some(doc)) = data.document() {
-            self.doc_width = doc.size.width;
-            self.doc_height = doc.size.height;
-            self.has_document = true;
-        } else {
-            self.has_document = false;
+        match data.document() {
+            Ok(Some(doc)) => {
+                self.doc_width = doc.size.width;
+                self.doc_height = doc.size.height;
+                self.has_document = true;
+            }
+            Ok(None) => {
+                self.has_document = false;
+            }
+            Err(e) => {
+                tracing::warn!("failed to read document: {e}");
+                self.has_document = false;
+            }
         }
         let layers = self.app.layer_service();
-        self.layer_count = layers.layer_count().unwrap_or(0);
+        match layers.layer_count() {
+            Ok(count) => self.layer_count = count,
+            Err(e) => {
+                tracing::warn!("failed to read layer count: {e}");
+                self.layer_count = 0;
+            }
+        }
     }
 }
 
@@ -97,7 +112,7 @@ impl Render for ColorPanelProps {
                 div()
                     .text_xs()
                     .font_weight(gpui::FontWeight::BOLD)
-                    .child("前景色"),
+                    .child(t!("color.foreground")),
             )
             // Color swatch
             .child(
@@ -121,7 +136,7 @@ impl Render for ColorPanelProps {
                 div()
                     .text_xs()
                     .text_color(cx.theme().foreground.opacity(0.5))
-                    .child(format!("R: {}  G: {}  B: {}", r, g, b)),
+                    .child(format!("R: {r}  G: {g}  B: {b}")),
             )
             // ── Divider ─────────────────────────────────────────────
             .child(
@@ -136,32 +151,44 @@ impl Render for ColorPanelProps {
                 div()
                     .text_xs()
                     .font_weight(gpui::FontWeight::BOLD)
-                    .child("文档信息"),
+                    .child(t!("color.document_info")),
             )
-            .child(if self.has_document {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().foreground.opacity(0.7))
-                            .child(format!("尺寸: {} × {}", self.doc_width, self.doc_height)),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().foreground.opacity(0.7))
-                            .child(format!("图层数: {}", self.layer_count)),
-                    )
-                    .into_any_element()
-            } else {
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().foreground.opacity(0.5))
-                    .child("没有打开的文档")
-                    .into_any_element()
+            .when(self.has_document, |this| {
+                this.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().foreground.opacity(0.7))
+                                .child(format!(
+                                    "{}: {} × {}",
+                                    t!("color.dimensions"),
+                                    self.doc_width,
+                                    self.doc_height
+                                )),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().foreground.opacity(0.7))
+                                .child(format!(
+                                    "{}: {}",
+                                    t!("color.layer_count"),
+                                    self.layer_count
+                                )),
+                        ),
+                )
+            })
+            .when(!self.has_document, |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().foreground.opacity(0.5))
+                        .child(t!("color.no_document")),
+                )
             })
     }
 }

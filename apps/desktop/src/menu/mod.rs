@@ -7,7 +7,8 @@
 use gpui::*;
 use rust_i18n::t;
 use gpui_component::{
-    ActiveTheme as _, button::{Button, ButtonVariants}, h_flex, Sizable,
+    ActiveTheme as _, h_flex, Sizable,
+    button::{Button, ButtonVariants},
     menu::{DropdownMenu, PopupMenu},
 };
 
@@ -68,7 +69,7 @@ impl Render for MenuBar {
                     .py_0p5()
                     .px_2()
                     .compact()
-                    .label(label_str.clone())
+                    .label(label_str)
                     .dropdown_menu(move |popup_menu, _, _| {
                         menu_items_for(popup_menu, kind, &canvas)
                     })
@@ -144,37 +145,49 @@ pub fn handle_menu_action(
         "menu-undo" => {
             let Some(app) = cx.try_global::<GlobalKaleidoApp>() else { return };
             if app.history_service().can_undo() {
-                if let Err(e) = app.history_service().undo() {
-                    tracing::warn!("undo failed: {e}");
-                } else {
-                    refresh_canvas(canvas, cx);
+                match app.history_service().undo() {
+                    Ok(()) => {
+                        refresh_canvas(canvas, cx);
+                    }
+                    Err(e) => {
+                        tracing::warn!("undo failed: {e}");
+                    }
                 }
             }
         }
         "menu-redo" => {
             let Some(app) = cx.try_global::<GlobalKaleidoApp>() else { return };
             if app.history_service().can_redo() {
-                if let Err(e) = app.history_service().redo() {
-                    tracing::warn!("redo failed: {e}");
-                } else {
-                    refresh_canvas(canvas, cx);
+                match app.history_service().redo() {
+                    Ok(()) => {
+                        refresh_canvas(canvas, cx);
+                    }
+                    Err(e) => {
+                        tracing::warn!("redo failed: {e}");
+                    }
                 }
             }
         }
         "menu-zoom-in" => {
-            let _ = canvas.update(cx, |canvas, cx| {
+            if let Err(e) = canvas.update(cx, |canvas, cx| {
                 canvas.zoom_in(cx);
-            });
+            }) {
+                tracing::warn!("zoom-in failed: {e}");
+            }
         }
         "menu-zoom-out" => {
-            let _ = canvas.update(cx, |canvas, cx| {
+            if let Err(e) = canvas.update(cx, |canvas, cx| {
                 canvas.zoom_out(cx);
-            });
+            }) {
+                tracing::warn!("zoom-out failed: {e}");
+            }
         }
         "menu-fit" => {
-            let _ = canvas.update(cx, |canvas, cx| {
+            if let Err(e) = canvas.update(cx, |canvas, cx| {
                 canvas.fit_to_window(cx);
-            });
+            }) {
+                tracing::warn!("fit-to-window failed: {e}");
+            }
         }
         "menu-mode-pixel" => set_mode("pixel", canvas, cx),
         "menu-mode-vector" => set_mode("vector", canvas, cx),
@@ -203,11 +216,13 @@ fn set_mode(mode: &str, canvas: &gpui::WeakEntity<crate::canvas::Canvas>, cx: &m
 
 /// Refreshes the canvas after a document-changing operation.
 fn refresh_canvas(canvas: &gpui::WeakEntity<crate::canvas::Canvas>, cx: &mut App) {
-    let _ = canvas.update(cx, |canvas, cx| {
+    if let Err(e) = canvas.update(cx, |canvas, cx| {
         canvas.refresh();
         cx.emit(PanelEvent::LayoutChanged);
         cx.notify();
-    });
+    }) {
+        tracing::warn!("failed to refresh canvas: {e}");
+    }
 }
 
 use gpui_component::dock::PanelEvent;

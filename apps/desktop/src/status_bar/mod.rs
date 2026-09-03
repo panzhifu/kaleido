@@ -1,7 +1,8 @@
 //! Status bar module — bottom information bar with reactive service data.
 
 use gpui::*;
-use gpui_component::{ActiveTheme as _, h_flex, StyledExt as _};
+use gpui_component::{ActiveTheme as _, h_flex};
+use rust_i18n::t;
 
 use crate::GlobalKaleidoApp;
 
@@ -11,10 +12,6 @@ pub struct StatusBar {
     app: GlobalKaleidoApp,
     /// Weak handle to the canvas (for zoom display).
     canvas: gpui::WeakEntity<crate::canvas::Canvas>,
-    /// Left-aligned dynamic segments.
-    left_items: Vec<String>,
-    /// Right-aligned segments (static).
-    right_items: Vec<String>,
 }
 
 impl StatusBar {
@@ -25,19 +22,7 @@ impl StatusBar {
         Self {
             app,
             canvas: canvas.downgrade(),
-            left_items: Vec::new(),
-            right_items: Vec::new(),
         }
-    }
-
-    pub fn add_left_item(mut self, item: &str) -> Self {
-        self.left_items.push(item.to_string());
-        self
-    }
-
-    pub fn add_right_item(mut self, item: &str) -> Self {
-        self.right_items.push(item.to_string());
-        self
     }
 }
 
@@ -62,57 +47,53 @@ impl Render for StatusBar {
             .bg(cx.theme().background)
             .border_t_1()
             .border_color(cx.theme().border)
-            // Left items (static).
-            .children(
-                self.left_items.iter().map(|item| {
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().foreground.opacity(0.7))
-                        .child(item.clone())
-                }),
-            )
             // Dynamic: editing mode.
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().foreground.opacity(0.7))
-                    .child(format!("模式: {mode}")),
-            )
+            .child(Self::segment(&t!("statusbar.mode"), mode.to_string(), cx))
             // Dynamic: layer count.
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().foreground.opacity(0.7))
-                    .child(if has_doc {
-                        format!("图层: {layer_count}")
-                    } else {
-                        "图层: —".into()
-                    }),
-            )
+            .child(Self::segment(
+                &t!("statusbar.layers"),
+                if has_doc {
+                    layer_count.to_string()
+                } else {
+                    "—".into()
+                },
+                cx,
+            ))
             // Dynamic: history depth.
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().foreground.opacity(0.7))
-                    .child(format!("历史: {history_depth} / ↩ {redo_depth}")),
-            )
+            .child(Self::segment(
+                &t!("statusbar.history"),
+                format!("{history_depth} / ↩ {redo_depth}"),
+                cx,
+            ))
             // Dynamic: zoom level.
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().foreground.opacity(0.7))
-                    .child(format!("缩放: {zoom_pct}%")),
-            )
+            .child(Self::segment(
+                &t!("statusbar.zoom"),
+                format!("{zoom_pct}%"),
+                cx,
+            ))
             // Spacer.
             .child(div().flex_1())
-            // Right items (static).
-            .children(
-                self.right_items.iter().map(|item| {
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().foreground.opacity(0.7))
-                        .child(item.clone())
-                }),
+    }
+}
+
+impl StatusBar {
+    /// Renders a single status segment with a label and value.
+    fn segment(label: &str, value: String, cx: &mut App) -> impl IntoElement {
+        h_flex()
+            .gap_0p5()
+            .items_center()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().foreground.opacity(0.6))
+                    .child(format!("{label}:")),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(cx.theme().foreground)
+                    .child(value),
             )
     }
 }

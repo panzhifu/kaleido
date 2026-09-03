@@ -7,7 +7,7 @@ use gpui_component_assets::Assets;
 use std::path::PathBuf;  // used in parse_initial_path
 use tracing::{error, info, warn};
 
-use crate::boot::{BootManager, BootState};
+use crate::boot::BootManager;
 
 use rust_i18n::t;
 
@@ -84,14 +84,10 @@ fn main() -> Result<()> {
         );
         let window_options = make_window_options(bounds);
 
-        // Spawn async boot on a background thread.
-        let boot_state = BootState::spawn();
-        let initial_path = initial_path.clone();
-
         // Open the main window with a boot manager that shows loading -> editor.
         if let Err(err) = cx.open_window(window_options, move |window, cx| {
             let view = cx.new(|cx| {
-                BootManager::new(boot_state, initial_path.clone(), window, cx)
+                BootManager::new(initial_path.clone(), window, cx)
             });
             cx.new(|cx| Root::new(view, window, cx))
         }) {

@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use gpui::*;
-use gpui_component::StyledExt as _;
+use gpui::prelude::FluentBuilder as _;
 use gpui_component::ActiveTheme as _;
 use gpui_component::dock::Panel;
 use gpui_base::dock::Panel as BasePanel;
@@ -14,8 +14,6 @@ pub use gpui_component::dock::PanelEvent;
 
 use crate::dock::ActiveTool;
 use crate::GlobalKaleidoApp;
-
-
 
 /// Canvas view — renders the current document and handles mouse interaction for tools.
 pub struct Canvas {
@@ -83,7 +81,8 @@ impl Canvas {
                     }
                 }
             }
-            Err(_) => {
+            Err(e) => {
+                tracing::debug!("render failed (no document?): {e}");
                 self.image_path = None;
                 self.natural_size = None;
                 self.has_document = false;
@@ -196,7 +195,7 @@ impl Canvas {
 
         if let (Some(layer_id), Some(orig)) = (self.dragging_layer, self.drag_original_transform) {
             let layers = self.app.layer_service();
-            let _ = layers.set_transform(
+            if let Err(e) = layers.set_transform(
                 layer_id,
                 kaleido_core::Transform2D {
                     tx: orig.tx + dx,
@@ -205,7 +204,9 @@ impl Canvas {
                     sx: orig.sx,
                     sy: orig.sy,
                 },
-            );
+            ) {
+                tracing::warn!("move live preview failed: {e}");
+            }
             // Refresh the canvas to show the live preview.
             self.refresh();
             cx.notify();
@@ -229,7 +230,7 @@ impl Canvas {
 
         if let (Some(layer_id), Some(orig)) = (self.dragging_layer, self.drag_original_transform) {
             let layers = self.app.layer_service();
-            let _ = layers.set_transform(
+            if let Err(e) = layers.set_transform(
                 layer_id,
                 kaleido_core::Transform2D {
                     tx: orig.tx + dx,
@@ -238,7 +239,9 @@ impl Canvas {
                     sx: orig.sx,
                     sy: orig.sy,
                 },
-            );
+            ) {
+                tracing::warn!("move final failed: {e}");
+            }
             // Refresh the canvas.
             self.refresh();
             cx.notify();
@@ -280,48 +283,51 @@ impl Render for Canvas {
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_move(cx.listener(Self::on_mouse_drag))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .child(if let Some(path) = &self.image_path {
+            .when_some(self.image_path.clone(), |this, path| {
                 let (base_w, base_h) = self.natural_size.unwrap_or((64.0, 64.0));
                 let zoom = self.zoom;
-                div()
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        img(path.clone())
-                            .w(px(base_w * zoom))
-                            .h(px(base_h * zoom))
-                            .object_fit(gpui::ObjectFit::Contain),
-                    )
-                    .into_any_element()
-            } else if self.has_document {
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().foreground.opacity(0.5))
-                    .child(t!("canvas.rendering"))
-                    .into_any_element()
-            } else {
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap_4()
-                    .child(
-                        div()
-                            .text_xl()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .child("Canvas"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().foreground.opacity(0.5))
-                            .child(t!("canvas.no_document")),
-                    )
-                    .into_any_element()
+                this.child(
+                    div()
+                        .size_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            img(path)
+                                .w(px(base_w * zoom))
+                                .h(px(base_h * zoom))
+                                .object_fit(gpui::ObjectFit::Contain),
+                        ),
+                )
+            })
+            .when(self.image_path.is_none() && self.has_document, |this| {
+                this.child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().foreground.opacity(0.5))
+                        .child(t!("canvas.rendering")),
+                )
+            })
+            .when(self.image_path.is_none() && !self.has_document, |this| {
+                this.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_4()
+                        .child(
+                            div()
+                                .text_xl()
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .child("Canvas"),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(cx.theme().foreground.opacity(0.5))
+                                .child(t!("canvas.no_document")),
+                        ),
+                )
             })
     }
 }
-
-

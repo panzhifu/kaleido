@@ -2,8 +2,12 @@
 
 use gpui::*;
 use gpui_base::dock::Panel as BasePanel;
-use gpui_component::{ActiveTheme as _, Icon, IconName, StyledExt as _, dock::PanelEvent};
+use gpui_component::{
+    ActiveTheme as _, IconName, Selectable, Sizable,
+    button::{Button, ButtonVariants}, dock::PanelEvent,
+};
 use gpui_component::dock::Panel;
+use rust_i18n::t;
 
 use super::ActiveTool;
 
@@ -23,58 +27,35 @@ impl ToolPanel {
 
     fn render_tool_button(
         &self,
-        kind: &'static str,
+        id: &'static str,
         icon: IconName,
-        label: &str,
+        label: &'static str,
+        tooltip: &'static str,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let kind = id;
         let is_active = self.active_tool.read(cx).current().name() == kind;
         let active_tool = self.active_tool.clone();
+
         let tool_kind = match kind {
             "move" => Some(super::active_tool::ToolKind::Move),
             _ => None,
         };
 
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap_0p5()
-            .w(px(56.0))
-            .h(px(56.0))
-            .rounded(px(6.0))
-            .bg(if is_active {
-                cx.theme().foreground.opacity(0.15)
-            } else {
-                cx.theme().background
-            })
-            .border_1()
-            .border_color(if is_active {
-                cx.theme().foreground.opacity(0.3)
-            } else {
-                cx.theme().border
-            })
-            .text_color(cx.theme().foreground)
-            .cursor_pointer()
-            .hover(|s| s.bg(cx.theme().foreground.opacity(0.08)))
-            .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
+        Button::new(id)
+            .ghost()
+            .small()
+            .icon(icon)
+            .label(t!(label))
+            .selected(is_active)
+            .tooltip(t!(tooltip))
+            .on_click(move |_, _, cx| {
                 if let Some(tool) = tool_kind.clone() {
-                    let active = active_tool.clone();
-                    cx.defer(move |cx| {
-                        active.update(cx, |active, cx| {
-                            active.set(tool, cx);
-                        });
+                    active_tool.update(cx, |active, cx| {
+                        active.set(tool, cx);
                     });
                 }
             })
-            .child(Icon::new(icon).size(px(20.0)))
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().foreground.opacity(if is_active { 0.9 } else { 0.6 }))
-                    .child(label.to_string()),
-            )
     }
 }
 
@@ -112,6 +93,12 @@ impl Render for ToolPanel {
             .text_color(cx.theme().foreground)
             .track_focus(&self.focus_handle)
             // Move tool
-            .child(self.render_tool_button("move", IconName::ArrowRight, "移动", cx))
+            .child(self.render_tool_button(
+                "move",
+                IconName::ArrowRight,
+                "tools.move",
+                "tools.move_tooltip",
+                cx,
+            ))
     }
 }

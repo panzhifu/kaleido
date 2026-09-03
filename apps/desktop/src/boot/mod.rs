@@ -15,27 +15,31 @@ use kaleido_services::app::{AppConfig, KaleidoApp};
 // Async boot state
 // ---------------------------------------------------------------------------
 
-/// Shared state for async boot.
+/// Shared state for async boot — uses std::thread + mpsc because
+/// `KaleidoApp::boot()` is synchronous and may block. The `window` reference
+/// cannot be moved into a `cx.spawn` future because it doesn't satisfy `'static`.
 type BootResult = cordis::Result<KaleidoApp>;
 
 /// Receives the boot result from the background thread.
-pub(crate) struct BootState {
+struct BootState {
     rx: mpsc::Receiver<BootResult>,
 }
 
 impl BootState {
     /// Spawns the boot process on a background thread.
-    pub(crate) fn spawn() -> Self {
+    fn spawn() -> Self {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let result = KaleidoApp::boot(AppConfig::default());
-            let _ = tx.send(result);
+            if tx.send(result).is_err() {
+                tracing::warn!("boot result receiver dropped");
+            }
         });
         Self { rx }
     }
 
     /// Checks if the boot has completed, returning the result if so.
-    pub(crate) fn try_recv(&self) -> Option<BootResult> {
+    fn try_recv(&self) -> Option<BootResult> {
         self.rx.try_recv().ok()
     }
 }
@@ -45,59 +49,68 @@ impl BootState {
 // ---------------------------------------------------------------------------
 
 /// View that manages the async boot transition.
+enum BootStage {
+    /// Showing loading screen, boot in progress.
+    Loading,
+    /// Boot completed, showing editor.
+    Ready(Entity<KaleidoEditor>),
+    /// Boot failed.
+    Failed(String),
+}
+
 pub struct BootManager {
     /// Boot state receiver (None once boot completes).
     boot_state: Option<BootState>,
     /// Initial file path to open.
     initial_path: Option<PathBuf>,
-    /// The main editor, created after boot completes.
-    editor: Option<Entity<KaleidoEditor>>,
+    /// Current boot stage.
+    stage: BootStage,
 }
 
 impl BootManager {
     pub fn new(
-        boot_state: BootState,
         initial_path: Option<PathBuf>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
     ) -> Self {
         Self {
-            boot_state: Some(boot_state),
+            boot_state: Some(BootState::spawn()),
             initial_path,
-            editor: None,
+            stage: BootStage::Loading,
         }
     }
 
-    /// Called on each frame to check boot status.
+    /// Called on each render to check boot status.
     fn poll_boot(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // If we already have the editor, nothing to do.
-        if self.editor.is_some() {
+        if !matches!(self.stage, BootStage::Loading) {
             return;
         }
 
-        // Check if boot has completed.
-        if let Some(boot_state) = &self.boot_state {
-            if let Some(result) = boot_state.try_recv() {
-                match result {
-                    Ok(app) => {
-                        cx.set_global(GlobalKaleidoApp(app.clone()));
-                        let editor = cx.new(|cx| {
-                            KaleidoEditor::new(self.initial_path.clone(), window, cx)
-                        });
-                        self.editor = Some(editor.clone());
-                        self.boot_state = None;
-                        cx.notify();
-                    }
-                    Err(e) => {
-                        tracing::error!("{}: {e}", t!("app.failed_to_boot"));
-                    }
+        let Some(boot_state) = &self.boot_state else { return };
+
+        if let Some(result) = boot_state.try_recv() {
+            match result {
+                Ok(app) => {
+                    cx.set_global(GlobalKaleidoApp(app));
+                    let editor = cx.new(|cx| {
+                        KaleidoEditor::new(self.initial_path.clone(), window, cx)
+                    });
+                    self.stage = BootStage::Ready(editor.clone());
+                    self.boot_state = None;
+                    cx.notify();
                 }
-                return;
+                Err(e) => {
+                    tracing::error!("{}: {e}", t!("app.failed_to_boot"));
+                    self.stage = BootStage::Failed(format!("{e}"));
+                    self.boot_state = None;
+                    cx.notify();
+                }
             }
+            return;
         }
 
         // Boot not complete, poll again next frame.
-        let weak = cx.entity().downgrade();
+        let _weak = cx.entity().downgrade();
         cx.defer_in(window, move |this, window, cx| {
             this.poll_boot(window, cx);
         });
@@ -109,32 +122,64 @@ impl Render for BootManager {
         // Poll boot status on every render.
         self.poll_boot(window, cx);
 
-        if let Some(editor) = &self.editor {
-            return editor.clone().into_any_element();
+        match &self.stage {
+            BootStage::Loading => {
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .gap_4()
+                    .bg(cx.theme().background)
+                    .text_color(cx.theme().foreground)
+                    .child(
+                        div()
+                            .text_2xl()
+                            .font_weight(FontWeight::BOLD)
+                            .child("Kaleido"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().foreground.opacity(0.6))
+                            .child(t!("app.starting")),
+                    )
+                    .into_any_element()
+            }
+            BootStage::Ready(editor) => {
+                editor.clone().into_any_element()
+            }
+            BootStage::Failed(msg) => {
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .gap_4()
+                    .bg(cx.theme().background)
+                    .text_color(cx.theme().foreground)
+                    .child(
+                        div()
+                            .text_2xl()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(cx.theme().danger)
+                            .child("⚠"),
+                    )
+                    .child(
+                        div()
+                            .text_base()
+                            .child(t!("app.failed_to_boot")),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().foreground.opacity(0.5))
+                            .child(msg.clone()),
+                    )
+                    .into_any_element()
+            }
         }
-
-        // Show loading screen.
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap_4()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
-            .child(
-                div()
-                    .text_2xl()
-                    .font_weight(FontWeight::BOLD)
-                    .child("Kaleido"),
-            )
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().foreground.opacity(0.6))
-                    .child(t!("app.starting")),
-            )
-            .into_any_element()
     }
 }

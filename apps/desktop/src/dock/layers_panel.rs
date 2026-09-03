@@ -1,9 +1,11 @@
 //! Layers panel — shows document layers with selection and management.
 
 use gpui::*;
+use gpui::prelude::FluentBuilder as _;
 use gpui_base::dock::Panel as BasePanel;
 use gpui_component::{
-    ActiveTheme as _, Icon, IconName, StyledExt as _, dock::PanelEvent,
+    ActiveTheme as _, Icon, IconName, Sizable,
+    button::{Button, ButtonVariants}, dock::PanelEvent,
 };
 use gpui_component::dock::Panel;
 use rust_i18n::t;
@@ -42,6 +44,49 @@ impl LayersPanel {
         self.layer_ids = layers.layer_ids().unwrap_or_default();
         self.has_document = self.app.data_service().has_document();
     }
+
+    /// Adds a new pixel layer.
+    fn add_layer(&mut self, cx: &mut Context<Self>) {
+        let layers = self.app.layer_service();
+        match layers.add_pixel_layer(
+            "New Layer",
+            64,
+            64,
+            kaleido_core::PixelFormat::Rgba8,
+        ) {
+            Ok(_) => {
+                self.refresh();
+                cx.notify();
+            }
+            Err(e) => {
+                tracing::warn!("failed to add layer: {e}");
+            }
+        }
+    }
+
+    /// Removes the active layer.
+    fn remove_active_layer(&mut self, cx: &mut Context<Self>) {
+        let layers = self.app.layer_service();
+        if let Some(active) = layers.active_layer() {
+            if let Err(e) = layers.remove(active) {
+                tracing::warn!("failed to remove layer: {e}");
+            } else {
+                self.refresh();
+                cx.notify();
+            }
+        }
+    }
+
+    /// Sets the active layer by ID.
+    fn set_active_layer(&mut self, id: kaleido_core::NodeId, cx: &mut Context<Self>) {
+        let layers = self.app.layer_service();
+        if let Err(e) = layers.set_active(id) {
+            tracing::warn!("failed to set active layer: {e}");
+        } else {
+            self.refresh();
+            cx.notify();
+        }
+    }
 }
 
 impl BasePanel for LayersPanel {
@@ -66,10 +111,7 @@ impl Focusable for LayersPanel {
 
 impl Render for LayersPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Refresh on every render to stay in sync.
-        self.refresh();
         let app = self.app.clone();
-        let this = cx.weak_entity();
 
         // Pre-compute layer data for rendering.
         let layer_data: Vec<(kaleido_core::NodeId, String, bool)> = self
@@ -118,151 +160,122 @@ impl Render for LayersPanel {
                         div()
                             .flex()
                             .gap_0p5()
-                            .child({
-                        let app = app.clone();
-                        let this = cx.weak_entity();
-                        // Add layer button.
-                        div()
-                            .w(px(20.0))
-                            .h(px(20.0))
-                            .rounded(px(3.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_pointer()
-                            .hover(|s| s.bg(cx.theme().foreground.opacity(0.1)))
-                            .child(Icon::new(IconName::Plus).size(px(12.0)))
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                move |_event, _window, cx| {
-                                    let layers = app.layer_service();
-                                    let _ = layers.add_pixel_layer(
-                                        "New Layer",
-                                        64,
-                                        64,
-                                        kaleido_core::PixelFormat::Rgba8,
-                                    );
-                                    let _ = this.update(cx, |panel, cx| {
-                                        panel.refresh();
-                                        cx.notify();
-                                    });
-                                },
+                            .child(
+                                Button::new("add-layer")
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(IconName::Plus)
+                                    .tooltip(t!("layers.add_tooltip"))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.add_layer(cx);
+                                    })),
                             )
-                    })
-                    .child({
-                        let app = app.clone();
-                        let this = cx.weak_entity();
-                        // Remove layer button.
-                        div()
-                            .w(px(20.0))
-                            .h(px(20.0))
-                            .rounded(px(3.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_pointer()
-                            .hover(|s| s.bg(cx.theme().foreground.opacity(0.1)))
-                            .child(Icon::new(IconName::Minus).size(px(12.0)))
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                move |_event, _window, cx| {
-                                    let layers = app.layer_service();
-                                    if let Some(active) = layers.active_layer() {
-                                        let _ = layers.remove(active);
-                                    }
-                                    let _ = this.update(cx, |panel, cx| {
-                                        panel.refresh();
-                                        cx.notify();
-                                    });
-                                },
-                            )
-                    }),
+                            .child(
+                                Button::new("remove-layer")
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(IconName::Minus)
+                                    .tooltip(t!("layers.remove_tooltip"))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.remove_active_layer(cx);
+                                    })),
+                            ),
                     ),
             )
             // ── Layer list ───────────────────────────────────────────
-            .child(if self.has_document && !layer_data.is_empty() {
-                div()
-                    .flex()
-                    .flex_col()
-                    .size_full()
-                    .children(layer_data.iter().map(|(id, name, is_active)| {
-                        let id = *id;
-                        let name = name.clone();
-                        let is_active = *is_active;
-                        let app = app.clone();
-                        let this = cx.weak_entity();
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .px_2()
-                            .py_1()
-                            .h(px(28.0))
-                            .bg(if is_active {
-                                cx.theme().foreground.opacity(0.12)
-                            } else {
-                                cx.theme().background
-                            })
-                            .rounded(px(3.0))
-                            .cursor_pointer()
-                            .text_color(cx.theme().foreground)
-                            .hover(|s| {
-                                if !is_active {
-                                    s.bg(cx.theme().foreground.opacity(0.05))
-                                } else {
-                                    s
-                                }
-                            })
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                move |_event, _window, cx| {
-                                    let layers = app.layer_service();
-                                    let _ = layers.set_active(id);
-                                    let _ = this.update(cx, |panel, cx| {
-                                        panel.refresh();
-                                        cx.notify();
-                                    });
-                                },
-                            )
-                            .child(
-                                div()
-                                    .w(px(14.0))
-                                    .h(px(14.0))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_color(cx.theme().foreground.opacity(0.5))
-                                    .child(Icon::new(IconName::Eye).size(px(10.0))),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .text_xs()
-                                    .child(name),
-                            )
-                    }))
-                    .into_any_element()
-            } else {
-                div()
-                    .size_full()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().foreground.opacity(0.5))
-                            .child(t!("layers.no_layers")),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().foreground.opacity(0.3))
-                            .child(t!("layers.open_or_add")),
-                    )
-                    .into_any_element()
+            .when(self.has_document && !layer_data.is_empty(), |this| {
+                this.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .size_full()
+                        .children(layer_data.iter().map(|(id, name, is_active)| {
+                            let id = *id;
+                            let name = name.clone();
+                            let is_active = *is_active;
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .px_2()
+                                .py_1()
+                                .h(px(28.0))
+                                .when(is_active, |el| {
+                                    el.bg(cx.theme().foreground.opacity(0.12))
+                                })
+                                .when(!is_active, |el| {
+                                    el.bg(cx.theme().background)
+                                })
+                                .rounded(px(3.0))
+                                .cursor_pointer()
+                                .text_color(cx.theme().foreground)
+                                .when(!is_active, |el| {
+                                    el.hover(|s| s.bg(cx.theme().foreground.opacity(0.05)))
+                                })
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.set_active_layer(id, cx);
+                                    }),
+                                )
+                                .child(
+                                    div()
+                                        .w(px(14.0))
+                                        .h(px(14.0))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_color(cx.theme().foreground.opacity(0.5))
+                                        .child(Icon::new(IconName::Eye).size(px(10.0))),
+                                )
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .text_xs()
+                                        .child(name),
+                                )
+                        })),
+                )
+            })
+            .when(self.has_document && layer_data.is_empty(), |this| {
+                this.child(
+                    div()
+                        .size_full()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().foreground.opacity(0.5))
+                                .child(t!("layers.no_layers")),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().foreground.opacity(0.3))
+                                .child(t!("layers.open_or_add")),
+                        ),
+                )
+            })
+            .when(!self.has_document, |this| {
+                this.child(
+                    div()
+                        .size_full()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().foreground.opacity(0.5))
+                                .child(t!("layers.no_document")),
+                        ),
+                )
             })
     }
 }

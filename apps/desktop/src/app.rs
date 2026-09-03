@@ -79,7 +79,10 @@ impl KaleidoEditor {
         match app.task_service().spawn(
             name,
             Box::new(move || {
-                let _ = tx.send(op());
+                let result = op();
+                if tx.send(result).is_err() {
+                    tracing::warn!("{name} result receiver dropped before send");
+                }
             }),
         ) {
             Ok(id) => {
@@ -93,14 +96,17 @@ impl KaleidoEditor {
         }
 
         cx.spawn(async move |this, cx| {
-            // Resolves when the task body sends its result (or drops the sender).
             let result = rx.await;
             let _ = this.update(cx, |this, cx| {
                 this.active_task = None;
                 match result {
                     Ok(Ok(())) => this.on_document_loaded(cx),
-                    Ok(Err(err)) => tracing::error!("{name} failed: {err}"),
-                    Err(_) => tracing::error!("{name} task dropped before completing"),
+                    Ok(Err(err)) => {
+                        tracing::error!("{name} failed: {err}");
+                    }
+                    Err(_) => {
+                        tracing::error!("{name} task dropped before completing");
+                    }
                 }
                 cx.notify();
             });
@@ -137,13 +143,7 @@ impl KaleidoEditor {
             }
         }
 
-        // Canvas handles its own re-render via cx.notify() after refresh().
-        // No need for KaleidoEditor to propagate the event.
-
         let dock_area = cx.new(|cx| DockLayoutView::new(app.clone(), canvas.clone(), active_tool.clone(), window, cx));
-
-        // Note: Layout persistence disabled to avoid window-not-found errors.
-        // The dock layout is ephemeral per session.
 
         let status_bar = cx.new(|_cx| {
             StatusBar::new(app.clone(), canvas.clone())
