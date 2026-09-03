@@ -1,10 +1,8 @@
 //! Dock workspace — uses the library's `DockArea` + `DockLayout` for
 //! fully resizable panels with drag-to-resize support.
 
-use std::sync::Arc;
-
 use gpui::*;
-use gpui_component::dock::{DockArea, DockLayout, DockSkin};
+use gpui_component::dock::{panel_handle, DockArea, DockLayout, DockSkin};
 
 use super::tool_panel::ToolPanel;
 use super::color_panel::ColorPanelProps;
@@ -36,21 +34,21 @@ impl DockLayoutView {
         let color_panel = cx.new(|cx| ColorPanelProps::new(app.clone(), cx));
 
         // ── Left: tools ─────────────────────────────────────────
-        let left = DockLayout::tabs().panel_view(Arc::new(tool_panel), cx);
+        let left = DockLayout::tabs().panel_view(panel_handle(tool_panel), cx);
 
         // ── Right: layers + color (vertical split) ──────────────
         let right = DockLayout::v_split()
             .child(
-                DockLayout::tabs().panel_view(Arc::new(layers_panel), cx),
+                DockLayout::tabs().panel_view(panel_handle(layers_panel), cx),
                 None,
             )
             .child(
-                DockLayout::tabs().panel_view(Arc::new(color_panel), cx),
+                DockLayout::tabs().panel_view(panel_handle(color_panel), cx),
                 Some(px(180.)),
             );
 
         // ── Center: canvas ──────────────────────────────────────
-        let center = DockLayout::tabs().panel_view(Arc::new(canvas), cx);
+        let center = DockLayout::tabs().panel_view(panel_handle(canvas), cx);
 
         // ── Assemble: left | center | right ────────────────────
         let layout = DockLayout::h_split()

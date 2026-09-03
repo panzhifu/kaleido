@@ -1,6 +1,7 @@
 //! Main application structure — dock layout with canvas.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use gpui::*;
 use gpui_component::{ActiveTheme as _, TitleBar, v_flex};
@@ -187,37 +188,43 @@ impl KaleidoEditor {
     }
 
     fn on_open_file(&mut self, _: &OpenFile, _window: &mut Window, cx: &mut Context<Self>) {
-        // Defer the prompt so the menu popup fully dismisses first —
-        // otherwise GPUI reports "window not found" while the popup
-        // is still active.
+        // Spawn a task that waits for the menu popup to fully dismiss
+        // before opening the file dialog — otherwise GPUI reports
+        // "window not found" while the popup is still active.
         let this = cx.weak_entity();
-        cx.defer(move |cx| {
-            let options = PathPromptOptions {
-                files: true,
-                directories: false,
-                multiple: false,
-                prompt: Some("打开图片".into()),
+        cx.spawn(async move |this, cx: &mut AsyncApp| {
+            // Wait for the menu popup to fully dismiss
+            cx.background_executor().timer(Duration::from_millis(150)).await;
+
+            // Prompt for paths on the main thread
+            let receiver = cx.update(|cx| {
+                let options = PathPromptOptions {
+                    files: true,
+                    directories: false,
+                    multiple: false,
+                    prompt: Some("打开图片".into()),
+                };
+                cx.prompt_for_paths(options)
+            });
+
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
             };
-            let receiver = cx.prompt_for_paths(options);
-            let app = cx.global::<GlobalKaleidoApp>().clone();
-            let this = this.clone();
-            cx.spawn(async move |cx| {
-                let Ok(Ok(Some(paths))) = receiver.await else {
-                    return;
-                };
-                let Some(path) = paths.into_iter().next() else {
-                    return;
-                };
-                let _ = this.update(cx, |this, cx| {
-                    this.run_file_task(
-                        "open_file",
-                        move || app.data_service().open(std::path::Path::new(&path)),
-                        cx,
-                    );
-                });
-            })
-            .detach();
-        });
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            let path = path.clone();
+            // Update the entity to open the file
+            let _ = this.update(cx, |this, cx| {
+                let app = cx.global::<GlobalKaleidoApp>().clone();
+                this.run_file_task(
+                    "open_file",
+                    move || app.data_service().open(std::path::Path::new(&path)),
+                    cx,
+                );
+            });
+        })
+        .detach();
     }
 
     fn on_save(&mut self, _: &Save, _window: &mut Window, cx: &mut Context<Self>) {
@@ -226,35 +233,42 @@ impl KaleidoEditor {
     }
 
     fn on_save_as(&mut self, _: &SaveAs, _window: &mut Window, cx: &mut Context<Self>) {
-        // Defer the prompt so the menu popup fully dismisses first.
+        // Spawn a task that waits for the menu popup to fully dismiss
+        // before opening the file dialog.
         let this = cx.weak_entity();
-        cx.defer(move |cx| {
-            let options = PathPromptOptions {
-                files: true,
-                directories: false,
-                multiple: false,
-                prompt: Some("另存为".into()),
+        cx.spawn(async move |this, cx: &mut AsyncApp| {
+            // Wait for the menu popup to fully dismiss
+            cx.background_executor().timer(Duration::from_millis(150)).await;
+
+            // Prompt for new path on the main thread
+            let receiver = cx.update(|cx| {
+                let options = PathPromptOptions {
+                    files: true,
+                    directories: false,
+                    multiple: false,
+                    prompt: Some("另存为".into()),
+                };
+                cx.prompt_for_paths(options)
+            });
+
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
             };
-            let receiver = cx.prompt_for_paths(options);
-            let app = cx.global::<GlobalKaleidoApp>().clone();
-            let this = this.clone();
-            cx.spawn(async move |cx| {
-                let Ok(Ok(Some(paths))) = receiver.await else {
-                    return;
-                };
-                let Some(path) = paths.into_iter().next() else {
-                    return;
-                };
-                let _ = this.update(cx, |this, cx| {
-                    this.run_file_task(
-                        "save_as",
-                        move || app.data_service().save_as(std::path::Path::new(&path)),
-                        cx,
-                    );
-                });
-            })
-            .detach();
-        });
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            let path = path.clone();
+            // Update the entity to save as
+            let _ = this.update(cx, |this, cx| {
+                let app = cx.global::<GlobalKaleidoApp>().clone();
+                this.run_file_task(
+                    "save_as",
+                    move || app.data_service().save_as(std::path::Path::new(&path)),
+                    cx,
+                );
+            });
+        })
+        .detach();
     }
 
     fn on_menu_item(&mut self, action: &MenuItemAction, _window: &mut Window, cx: &mut Context<Self>) {
