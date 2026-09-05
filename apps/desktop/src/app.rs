@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use gpui::*;
-use gpui_component::{ActiveTheme as _, TitleBar, v_flex};
+use gpui_kit::*;
+use gpui_kit::component::{ActiveTheme as _, TitleBar, v_flex};
 
 use futures::channel::oneshot;
 use kaleido_services::app::KaleidoApp;
@@ -14,7 +14,7 @@ use kaleido_traits::{ServiceResult, TaskId};
 #[derive(Clone, Default)]
 pub(crate) struct GlobalKaleidoApp(pub(crate) KaleidoApp);
 
-impl gpui::Global for GlobalKaleidoApp {}
+impl gpui_kit::Global for GlobalKaleidoApp {}
 
 impl std::ops::Deref for GlobalKaleidoApp {
     type Target = KaleidoApp;
@@ -48,7 +48,6 @@ use crate::status_bar::StatusBar;
 pub struct KaleidoEditor {
     focus_handle: FocusHandle,
     menu_bar: Entity<MenuBar>,
-    active_tool: Entity<ActiveTool>,
     dock_area: Entity<DockLayoutView>,
     canvas: Entity<Canvas>,
     status_bar: Entity<StatusBar>,
@@ -124,7 +123,7 @@ impl KaleidoEditor {
         let active_tool = cx.new(|cx| ActiveTool::new(cx));
         let app_for_canvas = app.clone();
         let canvas = cx.new(|cx| Canvas::new(app_for_canvas, active_tool.clone(), cx));
-        let menu_bar = cx.new(|cx| MenuBar::new(canvas.clone(), cx));
+        let menu_bar = cx.new(|cx| MenuBar::new(cx));
 
         // Load initial file if provided via command line.
         if let Some(path) = initial_path {
@@ -153,7 +152,6 @@ impl KaleidoEditor {
         Self {
             focus_handle,
             menu_bar,
-            active_tool,
             dock_area,
             canvas,
             status_bar,
@@ -191,8 +189,8 @@ impl KaleidoEditor {
         // Spawn a task that waits for the menu popup to fully dismiss
         // before opening the file dialog — otherwise GPUI reports
         // "window not found" while the popup is still active.
-        let this = cx.weak_entity();
-        cx.spawn(async move |this, cx: &mut AsyncApp| {
+        let _this = cx.weak_entity();
+        cx.spawn(async move |_this, cx: &mut AsyncApp| {
             // Wait for the menu popup to fully dismiss
             cx.background_executor().timer(Duration::from_millis(150)).await;
 
@@ -215,7 +213,7 @@ impl KaleidoEditor {
             };
             let path = path.clone();
             // Update the entity to open the file
-            let _ = this.update(cx, |this, cx| {
+            let _ = _this.update(cx, |this, cx| {
                 let app = cx.global::<GlobalKaleidoApp>().clone();
                 this.run_file_task(
                     "open_file",
@@ -235,8 +233,8 @@ impl KaleidoEditor {
     fn on_save_as(&mut self, _: &SaveAs, _window: &mut Window, cx: &mut Context<Self>) {
         // Spawn a task that waits for the menu popup to fully dismiss
         // before opening the file dialog.
-        let this = cx.weak_entity();
-        cx.spawn(async move |this, cx: &mut AsyncApp| {
+        let _this = cx.weak_entity();
+        cx.spawn(async move |_this, cx: &mut AsyncApp| {
             // Wait for the menu popup to fully dismiss
             cx.background_executor().timer(Duration::from_millis(150)).await;
 
@@ -259,7 +257,7 @@ impl KaleidoEditor {
             };
             let path = path.clone();
             // Update the entity to save as
-            let _ = this.update(cx, |this, cx| {
+            let _ = _this.update(cx, |this, cx| {
                 let app = cx.global::<GlobalKaleidoApp>().clone();
                 this.run_file_task(
                     "save_as",
@@ -315,7 +313,7 @@ impl Render for KaleidoEditor {
             .child(
                 div()
                     .flex_1()
-                    .min_h(px(0.))
+                    .min_h_0()
                     .child(self.dock_area.clone()),
             )
             .child(self.status_bar.clone())

@@ -1,7 +1,7 @@
 //! Status bar module — bottom information bar with reactive service data.
 
-use gpui::*;
-use gpui_component::{ActiveTheme as _, h_flex};
+use gpui_kit::*;
+use gpui_kit::component::{ActiveTheme as _, h_flex};
 use rust_i18n::t;
 
 use crate::GlobalKaleidoApp;

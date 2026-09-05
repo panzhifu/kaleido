@@ -1,6 +1,6 @@
 //! Active tool state shared between the tool panel and the canvas.
 
-use gpui::*;
+use gpui_kit::*;
 
 /// The currently active tool.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,14 +18,12 @@ impl ToolKind {
 
 /// Shared state for the currently active tool.
 pub struct ActiveTool {
-    focus_handle: FocusHandle,
     current: ToolKind,
 }
 
 impl ActiveTool {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(_cx: &mut Context<Self>) -> Self {
         Self {
-            focus_handle: cx.focus_handle(),
             current: ToolKind::Move,
         }
     }

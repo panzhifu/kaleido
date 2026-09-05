@@ -1,11 +1,11 @@
 //! Dock workspace — uses the library's `DockArea` + `DockLayout` for
 //! fully resizable panels with drag-to-resize support.
 
-use gpui::*;
-use gpui_component::dock::{panel_handle, DockArea, DockLayout, DockSkin};
+use gpui_kit::*;
+use gpui_kit::component::dock::{panel_handle, DockArea, DockLayout, DockSkin};
 
 use super::tool_panel::ToolPanel;
-use super::color_panel::ColorPanelProps;
+use super::color_panel::ColorPanel;
 use super::layers_panel::LayersPanel;
 use super::ActiveTool;
 use crate::canvas::Canvas;
@@ -31,7 +31,7 @@ impl DockLayoutView {
         // ── Build panels ────────────────────────────────────────
         let tool_panel = cx.new(|cx| ToolPanel::new(active_tool.clone(), cx));
         let layers_panel = cx.new(|cx| LayersPanel::new(app.clone(), cx));
-        let color_panel = cx.new(|cx| ColorPanelProps::new(app.clone(), cx));
+        let color_panel = cx.new(|cx| ColorPanel::new(app.clone(), cx));
 
         // ── Left: tools ─────────────────────────────────────────
         let left = DockLayout::tabs().panel_view(panel_handle(tool_panel), cx);
@@ -68,7 +68,7 @@ impl DockLayoutView {
 }
 
 impl Render for DockLayoutView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         self.dock_area.clone().into_element()
     }
 }

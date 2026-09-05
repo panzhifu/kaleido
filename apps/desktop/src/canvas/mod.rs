@@ -2,15 +2,15 @@
 
 use std::path::PathBuf;
 
-use gpui::*;
-use gpui::prelude::FluentBuilder as _;
-use gpui_component::ActiveTheme as _;
-use gpui_component::dock::Panel;
-use gpui_base::dock::Panel as BasePanel;
+use gpui_kit::*;
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::component::dock::Panel;
+use gpui_kit::base::dock::Panel as BasePanel;
 use rust_i18n::t;
 
 // Re-export PanelEvent so app.rs and menu/mod.rs can use it.
-pub use gpui_component::dock::PanelEvent;
+pub use gpui_kit::component::dock::PanelEvent;
 
 use crate::dock::ActiveTool;
 use crate::GlobalKaleidoApp;

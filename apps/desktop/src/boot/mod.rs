@@ -1,8 +1,8 @@
 //! Boot manager — shows a loading screen while the service layer boots
 //! on a background thread, then transitions to the main editor.
 
-use gpui::*;
-use gpui_component::ActiveTheme as _;
+use gpui_kit::*;
+use gpui_kit::component::ActiveTheme as _;
 use rust_i18n::t;
 use std::path::PathBuf;
 use std::sync::mpsc;

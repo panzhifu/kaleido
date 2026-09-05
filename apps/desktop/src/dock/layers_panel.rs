@@ -1,13 +1,13 @@
 //! Layers panel — shows document layers with selection and management.
 
-use gpui::*;
-use gpui::prelude::FluentBuilder as _;
-use gpui_base::dock::Panel as BasePanel;
-use gpui_component::{
+use gpui_kit::*;
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::base::dock::Panel as BasePanel;
+use gpui_kit::component::{
     ActiveTheme as _, Icon, IconName, Sizable,
     button::{Button, ButtonVariants}, dock::PanelEvent,
 };
-use gpui_component::dock::Panel;
+use gpui_kit::component::dock::Panel;
 use rust_i18n::t;
 
 use crate::GlobalKaleidoApp;
@@ -140,7 +140,7 @@ impl Render for LayersPanel {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .track_focus(&self.focus_handle)
-            // ── Header with add/remove buttons ────────────────────────
+            // Header with add/remove buttons
             .child(
                 div()
                     .flex()
@@ -182,7 +182,7 @@ impl Render for LayersPanel {
                             ),
                     ),
             )
-            // ── Layer list ───────────────────────────────────────────
+            // Layer list
             .when(self.has_document && !layer_data.is_empty(), |this| {
                 this.child(
                     div()
@@ -194,12 +194,13 @@ impl Render for LayersPanel {
                             let name = name.clone();
                             let is_active = *is_active;
                             div()
+                                .id(("layer-row", id.0))
                                 .flex()
                                 .items_center()
                                 .gap_1()
                                 .px_2()
                                 .py_1()
-                                .h(px(28.0))
+                                .h_7()
                                 .when(is_active, |el| {
                                     el.bg(cx.theme().foreground.opacity(0.12))
                                 })

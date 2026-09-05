@@ -1,9 +1,9 @@
 //! Kaleido desktop application entry point.
 
 use anyhow::Result;
-use gpui::{App, AppContext, Bounds, KeyBinding, Pixels, WindowBounds, WindowDecorations, px, size};
-use gpui_component::{Root, TitleBar};
-use gpui_component_assets::Assets;
+use gpui_kit::{App, AppContext, Bounds, KeyBinding, Pixels, WindowBounds, WindowDecorations, px, size};
+use gpui_kit::component::{Root, TitleBar};
+use gpui_kit::assets::Assets;
 use std::path::PathBuf;  // used in parse_initial_path
 use tracing::{error, info, warn};
 
@@ -64,7 +64,7 @@ fn main() -> Result<()> {
         info!(?path, "{}", t!("app.initial_file"));
     }
 
-    let app = gpui_platform::application().with_assets(Assets);
+    let app = gpui_kit::application().with_assets(Assets);
 
     app.run(move |cx: &mut App| {
         // Set locale based on system language.
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
         rust_i18n::set_locale(&locale);
         info!("Locale set to: {locale}");
 
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         bind_keyboard_shortcuts(cx);
 
         // Use default window bounds for now.
@@ -108,7 +108,7 @@ fn main() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Builds `WindowOptions` from the given bounds.
-fn make_window_options(bounds: Bounds<Pixels>) -> gpui::WindowOptions {
+fn make_window_options(bounds: Bounds<Pixels>) -> gpui_kit::WindowOptions {
     let mut options = TitleBar::window_options();
     options.window_bounds = Some(WindowBounds::Windowed(bounds));
     options.focus = true;

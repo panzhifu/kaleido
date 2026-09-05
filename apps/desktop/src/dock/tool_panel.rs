@@ -1,12 +1,12 @@
 //! Tool panel — shows available tools as clickable icons in the dock.
 
-use gpui::*;
-use gpui_base::dock::Panel as BasePanel;
-use gpui_component::{
+use gpui_kit::*;
+use gpui_kit::base::dock::Panel as BasePanel;
+use gpui_kit::component::{
     ActiveTheme as _, IconName, Selectable, Sizable,
     button::{Button, ButtonVariants}, dock::PanelEvent,
 };
-use gpui_component::dock::Panel;
+use gpui_kit::component::dock::Panel;
 use rust_i18n::t;
 
 use super::ActiveTool;

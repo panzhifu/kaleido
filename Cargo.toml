@@ -39,9 +39,6 @@ rayon = "1.10"
 rust-i18n = "3"
 once_cell = "1.20"
 
-# GUI 框架（git 依赖；https 经全局 git insteadOf 重写为 ssh）
-gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", package = "gpui_platform", features = ["font-kit"] }
-gpui-base = { git = "https://github.com/longbridge/gpui-component", package = "gpui-base" }
-gpui-component = { git = "https://github.com/longbridge/gpui-component", package = "gpui-component" }
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", package = "gpui-component-assets" }
+# GUI 框架
+# gpui-kit bundles gpui + gpui-base + gpui-component + gpui-kit-assets
+gpui-kit = { path = "../gpui-kit/crates/kit" }

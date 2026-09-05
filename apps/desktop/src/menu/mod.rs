@@ -4,9 +4,9 @@
 //! The menu holds a weak handle to the canvas entity and reads the global
 //! [`GlobalKaleidoApp`] to perform actions directly.
 
-use gpui::*;
+use gpui_kit::*;
 use rust_i18n::t;
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme as _, h_flex, Sizable,
     button::{Button, ButtonVariants},
     menu::{DropdownMenu, PopupMenu},
@@ -17,8 +17,6 @@ use crate::GlobalKaleidoApp;
 /// Menu bar component - renders inside TitleBar.
 pub struct MenuBar {
     focus_handle: FocusHandle,
-    /// Weak handle to the canvas (for zoom / refresh).
-    canvas: gpui::WeakEntity<crate::canvas::Canvas>,
 }
 
 /// Identifies which menu a menu-item action belongs to.
@@ -40,10 +38,9 @@ const MENU_LABELS: &[(MenuKind, &str)] = &[
 ];
 
 impl MenuBar {
-    pub fn new(canvas: gpui::Entity<crate::canvas::Canvas>, cx: &mut Context<Self>) -> Self {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
-            canvas: canvas.downgrade(),
         }
     }
 }
@@ -61,7 +58,6 @@ impl Render for MenuBar {
             .children(MENU_LABELS.iter().map(|(kind, label)| {
                 let kind = *kind;
                 let label_str = t!(*label).to_string();
-                let canvas = self.canvas.clone();
 
                 Button::new(("menu-bar", kind as u64))
                     .ghost()
@@ -71,7 +67,7 @@ impl Render for MenuBar {
                     .compact()
                     .label(label_str)
                     .dropdown_menu(move |popup_menu, _, _| {
-                        menu_items_for(popup_menu, kind, &canvas)
+                        menu_items_for(popup_menu, kind)
                     })
             }))
             // Spacer to push remaining content to the right.
@@ -84,7 +80,6 @@ impl Render for MenuBar {
 fn menu_items_for(
     menu: PopupMenu,
     kind: MenuKind,
-    canvas: &gpui::WeakEntity<crate::canvas::Canvas>,
 ) -> PopupMenu {
     match kind {
         MenuKind::File => menu
@@ -225,4 +220,4 @@ fn refresh_canvas(canvas: &gpui::WeakEntity<crate::canvas::Canvas>, cx: &mut App
     }
 }
 
-use gpui_component::dock::PanelEvent;
+use gpui_kit::component::dock::PanelEvent;
